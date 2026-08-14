@@ -1,0 +1,102 @@
+# Methodology
+
+## 1. What this benchmark measures — and what it does not
+
+The data path under test:
+
+```text
+Elasticsearch → row-serialized documents out of the cluster
+             → SoftClient4ES: converted to Arrow ONCE at the sidecar, streamed as
+               Arrow batches, consumed by the client with no further deserialization
+             → Trino: parsed into Trino's columnar pages, re-serialized to Trino's
+               row-oriented client protocol, re-parsed value-by-value in the client
+```
+
+**Every client pays the Elasticsearch serialization leg.** Elasticsearch hands external clients
+row-serialized documents (JSON by default; the SQL endpoint can also emit CSV/TSV/CBOR/Smile). None
+is columnar, and this benchmark never claims to avoid that step. What it measures is what happens
+*after* it: SoftClient4ES serializes to Arrow once and the client consumes that columnar buffer
+directly, while Trino re-serializes to a row protocol the client must parse again.
+
+So this benchmark measures **large result-set extraction and client-side consumption** — wall-clock,
+client CPU, peak client memory — which is where the client representation dominates. It does **not**
+measure Elasticsearch-side query execution (I/O, scoring), where the wire format is irrelevant.
+
+No number is published that did not come out of a run of this harness.
+
+## 2. Fairness rules
+
+- **Same host, same session, same index.** Both systems read `bench_events_10m` back to back.
+- **Identical container limits:** Elasticsearch, the sidecar, and Trino each get 4 CPU / 4 GB.
+  Elasticsearch heap is pinned at 2 GB; Trino's official image auto-sizes its heap from container
+  memory.
+- **Page-size symmetry:** the sidecar's `ARROW_BATCH_SIZE=1000` equals Trino's
+  `elasticsearch.scroll-size=1000`. Both are product defaults, pinned explicitly so the setting can
+  be checked.
+- **Authentication disabled on both paths**, so authentication cost is zero and identical on both
+  sides.
+- **Both clients are used the way their projects document them.** SoftClient4ES is driven with the
+  standard `adbc_driver_flightsql` Arrow Flight SQL driver; Trino with its own `trino` Python
+  package, and — for the fairness comparison in RESULTS S1/S1r — with its fastest available clients
+  (connectorx and the ADBC Trino driver). No SoftClient4ES-specific client code is used.
+- **Trino uses its default type mapping.** `legacy_primitive_types` would return unparsed strings,
+  deferring the parse rather than avoiding it, and is not used.
+- **Warm cache, fresh process.** Each scenario's warm-ups run immediately before its measured runs,
+  so both systems measure against a warm Elasticsearch page cache. Every measured run is a fresh OS
+  process, so peak memory cannot leak between runs. Because SoftClient4ES runs first in each
+  scenario, Trino meets a slightly warmer cache — an effect in Trino's favour.
+- **Correctness before timing.** Each run asserts the exact expected row count; a run that returns
+  the wrong count is discarded, never reported. Python is never run with `-O`, so the asserts
+  always execute.
+- The exact configuration lives alongside this file, and the data generator is deterministic
+  (fixed seed).
+
+## 3. Metrics
+
+- **Wall-clock:** `time.perf_counter()` around connect → materialized result. Connection setup is
+  included because it is time the user waits. (The Flight runner dials the sidecar by IP literal to
+  avoid a Go-driver DNS lookup that would otherwise add a fixed per-connection latency; real
+  deployments should reuse connections.)
+- **Client CPU:** `time.process_time()` for the client process — the CPU spent turning the wire
+  format into usable values.
+- **Peak client memory:** the process's peak physical footprint. On macOS this is the kernel's
+  `ri_lifetime_max_phys_footprint`, which includes compressed pages and is therefore immune to the
+  macOS memory compressor (plain RSS under-reports under memory pressure). On Linux the harness
+  falls back to `ru_maxrss`.
+- **ES wire bytes:** read from the container network counters, so a wire-volume difference is
+  measured, not asserted.
+
+## 4. Licence disclosure
+
+SoftClient4ES enforces a result-set quota by licence tier (Community 10,000 / Pro 1,000,000 /
+Enterprise unlimited). The 10-million-row scenarios therefore run under an Enterprise-tier licence.
+**The licence lifts a row quota only — it does not change the batch size, the serialization, or the
+data path.** The runners assert exactly 10,000,000 rows, so a quota-capped run aborts rather than
+being reported; a truncated result can never be published by accident. With no licence the harness
+runs on Community and reproduces every scenario at reduced (`--limit`) scale.
+
+## 5. Interpretation guardrails
+
+- **S1 / S1r / S2** differences are attributable to the wire format and client-side representation.
+- **S3** differences are attributable to **aggregation pushdown**, not the wire format: SoftClient4ES
+  compiles the `GROUP BY` into an Elasticsearch aggregation, while Trino's connector performs
+  predicate pushdown only and scans all rows. S3 is never a wire-format result.
+- **S4** is the control: with a small result the wire format stops mattering, and near-parity there
+  is a sign the benchmark is honest, not a weakness.
+- **Where Trino is stronger** is published alongside the results (RESULTS section 6).
+
+## 6. Known limitations
+
+- **Single node throughout.** This does not exercise Trino's distributed execution, spill-to-disk,
+  or fault tolerance — real strengths of Trino that a single-node extraction benchmark cannot show.
+- **One flat mapping, no nested fields or arrays.** This avoids Trino's documented gaps in those
+  types, so the connector is not handicapped; it also means the benchmark says nothing about SQL
+  coverage, only about extraction efficiency.
+- **Single primary shard.** Trino's connector creates one split per shard, so it read with a single
+  reader and its scan parallelism was not exercised. A multi-shard index (the optional "S1b"
+  sensitivity run) would only *improve* Trino's numbers, so it was not run: the single-shard setup
+  is the conservative choice, and it is stated wherever the JOIN and S1 results appear.
+- **Trino's spooling protocol was not benchmarked separately.** The optional "S1-spooled" variant
+  (Trino's `json+zstd` spooling client) is superseded by the S1/S1r fairness comparison against
+  connectorx and the ADBC Trino driver, which measure Trino's fastest *columnar* clients directly —
+  a stronger fairness position than the spooling protocol alone.

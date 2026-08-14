@@ -1,0 +1,16 @@
+{
+  "engine": "trino",
+  "mode": "full",
+  "cap": "8g",
+  "verdict": "failed(exit 5)",
+  "exit_code": 5,
+  "payload": {
+    "engine": "trino",
+    "mode": "full",
+    "cap": "8g",
+    "outcome": "error",
+    "error_type": "ProgrammingError",
+    "error": "(trino.exceptions.TrinoUserError) TrinoUserError(type=USER_ERROR, name=ABANDONED_QUERY, message=\"Query 20260813_173224_00002_w8gkf was abandoned by the client, as it may have exited or stopped checking for query results. Query results have not been accessed since 2026-08-13T17:33:16.891092986Z: curr",
+    "wall_s": 54.35139039999922
+  }
+}

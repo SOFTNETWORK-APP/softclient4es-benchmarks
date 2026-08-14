@@ -1,0 +1,1 @@
+capture failed: Command '['sh', '-c', 'cid=$(docker compose ps -aq flight-sql | head -1) || exit 1; [ -n "$cid" ] || { echo "flight-sql container not found"; exit 1; }; img=$(docker inspect "$cid" --format "{{.Image}}"); docker run --rm --entrypoint sh "$img" -c "sha256sum /opt/docker/lib/app.softnetwork.*.jar" 2>&1']' timed out after 180 seconds

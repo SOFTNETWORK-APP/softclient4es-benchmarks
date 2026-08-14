@@ -1,0 +1,4 @@
+DRIVER VERSION LEVEL LOCATION                                                
+                                                                             
+trino  0.5.1   env   /Users/smanciot/opt/anaconda3/etc/adbc/drivers          
+trino  0.5.1   user  /Users/smanciot/Library/Application Support/ADBC/Drivers

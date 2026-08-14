@@ -1,0 +1,18 @@
+{
+  "engine": "flight",
+  "n": 1,
+  "cap_mb": 8192,
+  "budget_gib": 8.0,
+  "completed": 1,
+  "total_wall_s": 37.87036445795093,
+  "runs": [
+    {
+      "idx": 0,
+      "outcome": "completed",
+      "exit_code": 0,
+      "wall_s": 37.57119710100051,
+      "peak_rss_mb": 1523.09765625,
+      "rows": 10000000
+    }
+  ]
+}

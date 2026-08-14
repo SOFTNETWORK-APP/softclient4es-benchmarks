@@ -1,0 +1,16 @@
+{
+  "engine": "trino",
+  "mode": "chunked",
+  "cap": "4g",
+  "verdict": "failed(exit 5)",
+  "exit_code": 5,
+  "payload": {
+    "engine": "trino",
+    "mode": "chunked",
+    "cap": "4g",
+    "outcome": "error",
+    "error_type": "ProgrammingError",
+    "error": "(trino.exceptions.TrinoUserError) TrinoUserError(type=USER_ERROR, name=ABANDONED_QUERY, message=\"Query 20260813_175145_00002_qwdk7 was abandoned by the client, as it may have exited or stopped checking for query results. Query results have not been accessed since 2026-08-13T17:52:44.940850944Z: curr",
+    "wall_s": 60.25135656999919
+  }
+}

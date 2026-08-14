@@ -1,0 +1,327 @@
+[
+  {
+    "engine": "flight",
+    "mode": "full",
+    "cap": "8g",
+    "verdict": "completed",
+    "exit_code": 0,
+    "payload": {
+      "engine": "flight",
+      "mode": "full",
+      "cap": "8g",
+      "outcome": "completed",
+      "rows": 10000000,
+      "wall_s": 41.29624568500003,
+      "cpu_s": 4.060332982,
+      "peak_rss_mb": 1530.55078125,
+      "rows_ok": true
+    }
+  },
+  {
+    "engine": "trino",
+    "mode": "full",
+    "cap": "8g",
+    "verdict": "failed(exit 5)",
+    "exit_code": 5,
+    "payload": {
+      "engine": "trino",
+      "mode": "full",
+      "cap": "8g",
+      "outcome": "error",
+      "error_type": "ProgrammingError",
+      "error": "(trino.exceptions.TrinoUserError) TrinoUserError(type=USER_ERROR, name=ABANDONED_QUERY, message=\"Query 20260813_173224_00002_w8gkf was abandoned by the client, as it may have exited or stopped checking for query results. Query results have not been accessed since 2026-08-13T17:33:16.891092986Z: curr",
+      "wall_s": 54.35139039999922
+    }
+  },
+  {
+    "engine": "flight",
+    "mode": "full",
+    "cap": "6g",
+    "verdict": "completed",
+    "exit_code": 0,
+    "payload": {
+      "engine": "flight",
+      "mode": "full",
+      "cap": "6g",
+      "outcome": "completed",
+      "rows": 10000000,
+      "wall_s": 36.6550649339988,
+      "cpu_s": 3.387997688,
+      "peak_rss_mb": 1529.1484375,
+      "rows_ok": true
+    }
+  },
+  {
+    "engine": "trino",
+    "mode": "full",
+    "cap": "6g",
+    "verdict": "OOM-KILLED",
+    "exit_code": 137,
+    "payload": null
+  },
+  {
+    "engine": "flight",
+    "mode": "full",
+    "cap": "4g",
+    "verdict": "completed",
+    "exit_code": 0,
+    "payload": {
+      "engine": "flight",
+      "mode": "full",
+      "cap": "4g",
+      "outcome": "completed",
+      "rows": 10000000,
+      "wall_s": 37.11040355800105,
+      "cpu_s": 3.201860636,
+      "peak_rss_mb": 1535.25390625,
+      "rows_ok": true
+    }
+  },
+  {
+    "engine": "trino",
+    "mode": "full",
+    "cap": "4g",
+    "verdict": "OOM-KILLED",
+    "exit_code": 137,
+    "payload": null
+  },
+  {
+    "engine": "flight",
+    "mode": "full",
+    "cap": "3g",
+    "verdict": "completed",
+    "exit_code": 0,
+    "payload": {
+      "engine": "flight",
+      "mode": "full",
+      "cap": "3g",
+      "outcome": "completed",
+      "rows": 10000000,
+      "wall_s": 37.140175600001385,
+      "cpu_s": 3.235039494,
+      "peak_rss_mb": 1535.1484375,
+      "rows_ok": true
+    }
+  },
+  {
+    "engine": "trino",
+    "mode": "full",
+    "cap": "3g",
+    "verdict": "OOM-KILLED",
+    "exit_code": 137,
+    "payload": null
+  },
+  {
+    "engine": "flight",
+    "mode": "full",
+    "cap": "2g",
+    "verdict": "completed",
+    "exit_code": 0,
+    "payload": {
+      "engine": "flight",
+      "mode": "full",
+      "cap": "2g",
+      "outcome": "completed",
+      "rows": 10000000,
+      "wall_s": 37.4498845170001,
+      "cpu_s": 3.499138223,
+      "peak_rss_mb": 1533.1796875,
+      "rows_ok": true
+    }
+  },
+  {
+    "engine": "trino",
+    "mode": "full",
+    "cap": "2g",
+    "verdict": "OOM-KILLED",
+    "exit_code": 137,
+    "payload": null
+  },
+  {
+    "engine": "flight",
+    "mode": "chunked",
+    "cap": "8g",
+    "verdict": "completed",
+    "exit_code": 0,
+    "payload": {
+      "engine": "flight",
+      "mode": "chunked",
+      "cap": "8g",
+      "outcome": "completed",
+      "rows": 10000000,
+      "wall_s": 38.19265980899945,
+      "cpu_s": 8.478667415,
+      "peak_rss_mb": 145.0234375,
+      "rows_ok": true,
+      "chunksize": 100000
+    }
+  },
+  {
+    "engine": "trino",
+    "mode": "chunked",
+    "cap": "8g",
+    "verdict": "completed",
+    "exit_code": 0,
+    "payload": {
+      "engine": "trino",
+      "mode": "chunked",
+      "cap": "8g",
+      "outcome": "completed",
+      "rows": 10000000,
+      "wall_s": 60.98988932000066,
+      "cpu_s": 41.752974315,
+      "peak_rss_mb": 298.6953125,
+      "rows_ok": true,
+      "chunksize": 100000
+    }
+  },
+  {
+    "engine": "flight",
+    "mode": "chunked",
+    "cap": "6g",
+    "verdict": "completed",
+    "exit_code": 0,
+    "payload": {
+      "engine": "flight",
+      "mode": "chunked",
+      "cap": "6g",
+      "outcome": "completed",
+      "rows": 10000000,
+      "wall_s": 38.006308808999165,
+      "cpu_s": 8.158064543,
+      "peak_rss_mb": 146.09375,
+      "rows_ok": true,
+      "chunksize": 100000
+    }
+  },
+  {
+    "engine": "trino",
+    "mode": "chunked",
+    "cap": "6g",
+    "verdict": "completed",
+    "exit_code": 0,
+    "payload": {
+      "engine": "trino",
+      "mode": "chunked",
+      "cap": "6g",
+      "outcome": "completed",
+      "rows": 10000000,
+      "wall_s": 59.628281110999524,
+      "cpu_s": 40.847976861999996,
+      "peak_rss_mb": 301.578125,
+      "rows_ok": true,
+      "chunksize": 100000
+    }
+  },
+  {
+    "engine": "flight",
+    "mode": "chunked",
+    "cap": "4g",
+    "verdict": "completed",
+    "exit_code": 0,
+    "payload": {
+      "engine": "flight",
+      "mode": "chunked",
+      "cap": "4g",
+      "outcome": "completed",
+      "rows": 10000000,
+      "wall_s": 37.80030501799956,
+      "cpu_s": 8.083569394,
+      "peak_rss_mb": 146.3046875,
+      "rows_ok": true,
+      "chunksize": 100000
+    }
+  },
+  {
+    "engine": "trino",
+    "mode": "chunked",
+    "cap": "4g",
+    "verdict": "failed(exit 5)",
+    "exit_code": 5,
+    "payload": {
+      "engine": "trino",
+      "mode": "chunked",
+      "cap": "4g",
+      "outcome": "error",
+      "error_type": "ProgrammingError",
+      "error": "(trino.exceptions.TrinoUserError) TrinoUserError(type=USER_ERROR, name=ABANDONED_QUERY, message=\"Query 20260813_175145_00002_qwdk7 was abandoned by the client, as it may have exited or stopped checking for query results. Query results have not been accessed since 2026-08-13T17:52:44.940850944Z: curr",
+      "wall_s": 60.25135656999919
+    }
+  },
+  {
+    "engine": "flight",
+    "mode": "chunked",
+    "cap": "3g",
+    "verdict": "completed",
+    "exit_code": 0,
+    "payload": {
+      "engine": "flight",
+      "mode": "chunked",
+      "cap": "3g",
+      "outcome": "completed",
+      "rows": 10000000,
+      "wall_s": 39.88144514399937,
+      "cpu_s": 9.327963154,
+      "peak_rss_mb": 148.47265625,
+      "rows_ok": true,
+      "chunksize": 100000
+    }
+  },
+  {
+    "engine": "trino",
+    "mode": "chunked",
+    "cap": "3g",
+    "verdict": "completed",
+    "exit_code": 0,
+    "payload": {
+      "engine": "trino",
+      "mode": "chunked",
+      "cap": "3g",
+      "outcome": "completed",
+      "rows": 10000000,
+      "wall_s": 58.93610165199971,
+      "cpu_s": 40.107162455,
+      "peak_rss_mb": 301.30859375,
+      "rows_ok": true,
+      "chunksize": 100000
+    }
+  },
+  {
+    "engine": "flight",
+    "mode": "chunked",
+    "cap": "2g",
+    "verdict": "completed",
+    "exit_code": 0,
+    "payload": {
+      "engine": "flight",
+      "mode": "chunked",
+      "cap": "2g",
+      "outcome": "completed",
+      "rows": 10000000,
+      "wall_s": 37.51597197499905,
+      "cpu_s": 8.420843545,
+      "peak_rss_mb": 146.65625,
+      "rows_ok": true,
+      "chunksize": 100000
+    }
+  },
+  {
+    "engine": "trino",
+    "mode": "chunked",
+    "cap": "2g",
+    "verdict": "completed",
+    "exit_code": 0,
+    "payload": {
+      "engine": "trino",
+      "mode": "chunked",
+      "cap": "2g",
+      "outcome": "completed",
+      "rows": 10000000,
+      "wall_s": 58.32229606799956,
+      "cpu_s": 39.615238577999996,
+      "peak_rss_mb": 305.2890625,
+      "rows_ok": true,
+      "chunksize": 100000
+    }
+  }
+]

@@ -1,0 +1,49 @@
+# Client pins.
+#
+# CURRENT, not archaeological. These used to be held at pyarrow 18.1.0 / adbc 1.6.0
+# on the stated grounds that they were "the versions the softclient4es-arrow repo's
+# own CI runs against". That justification died with arrow#152 (fixed in PR #153):
+# the CI now pins pyarrow 25.0.0 / adbc 1.12.0, so tracking CI means tracking these.
+#
+# It was never only a bookkeeping question. Measured back-to-back against the same
+# sidecar, the old pins cost the Flight row-oriented path 19.2% wall, 20.4% client
+# CPU and 43.9% peak RSS -- against a Trino client (trino==0.338.0) that was already
+# current. A published comparison must not handicap one side by seven releases.
+pyarrow==25.0.0
+adbc_driver_manager==1.12.0
+adbc_driver_flightsql==1.12.0
+
+# Latest at implementation time (verified on PyPI 2026-08-06).
+duckdb==1.5.5
+pandas==3.0.5
+trino==0.338.0
+
+# S1r (time-to-DataFrame) reaches Trino the way a data engineer does:
+# pandas.read_sql over the trino.sqlalchemy dialect. pandas supports raw DBAPI
+# connections for sqlite ONLY -- everything else officially wants a SQLAlchemy
+# connectable, and the trino package ships the dialect but not sqlalchemy itself.
+sqlalchemy==2.0.51
+
+# ONLY used by the optional S1-spooled variant (encoding="json+zstd").
+zstandard
+
+# S1r polars variant (added 2026-08-14). polars is Arrow-native, so the Flight
+# side lands it via from_arrow (near-zero-copy) while Trino goes through
+# pl.read_database over trino.sqlalchemy -- same rows-to-columns cost as pandas.
+# connectorx is Trino's MOST flattering client route (Rust core parses Trino's
+# JSON pages straight into columnar buffers, no Python row objects) and is
+# published as the polars-cx variant for exactly that reason: the comparison
+# must include the best route the other side has.
+polars==1.43.2
+connectorx==0.4.5
+
+# S1 arrowadbc / S1r polars-adbc variants: a REAL ADBC driver for Trino exists
+# (ADBC Driver Foundry, https://adbc-drivers.org/drivers/trino/ -- v0.5.1,
+# tested with Trino 483, the exact engine version here). The driver itself is
+# NOT a pip package: install with `dbc install --level user trino` (user level,
+# NOT the default -- dbc's env autodetect can land it in an unrelated conda
+# prefix). Driver version is recorded per session in adbc-drivers.txt.
+dbc==0.3.0
+
+# Whatever actually gets installed is frozen via `pip freeze` into RESULTS.md section 1.
+# That ledger, not this file, is the version authority for any published number.

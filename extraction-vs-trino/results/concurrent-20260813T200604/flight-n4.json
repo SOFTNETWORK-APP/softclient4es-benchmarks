@@ -1,0 +1,42 @@
+{
+  "engine": "flight",
+  "n": 4,
+  "cap_mb": 2048,
+  "budget_gib": 8.0,
+  "completed": 4,
+  "total_wall_s": 45.090986915980466,
+  "runs": [
+    {
+      "idx": 0,
+      "outcome": "completed",
+      "exit_code": 0,
+      "wall_s": 44.52112781100004,
+      "peak_rss_mb": 1530.375,
+      "rows": 10000000
+    },
+    {
+      "idx": 1,
+      "outcome": "completed",
+      "exit_code": 0,
+      "wall_s": 44.52088476999961,
+      "peak_rss_mb": 1526.84765625,
+      "rows": 10000000
+    },
+    {
+      "idx": 2,
+      "outcome": "completed",
+      "exit_code": 0,
+      "wall_s": 44.50767443600125,
+      "peak_rss_mb": 1536.4609375,
+      "rows": 10000000
+    },
+    {
+      "idx": 3,
+      "outcome": "completed",
+      "exit_code": 0,
+      "wall_s": 44.51974131099996,
+      "peak_rss_mb": 1536.19140625,
+      "rows": 10000000
+    }
+  ]
+}

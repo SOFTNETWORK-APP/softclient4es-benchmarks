@@ -1,0 +1,17 @@
+# Local environment and secrets
+.env
+
+# Virtualenvs
+.venv*/
+__pycache__/
+*.pyc
+
+# Measured run output. Sessions that back a published number are committed
+# deliberately with `git add -f <path>/results/<session>/`; everything else here
+# is scratch.
+**/results/*/
+**/results/*.log
+**/results/summary.md
+
+# Local-only Docker override (e.g. licence injection for full-scale runs)
+extraction-vs-trino/docker-compose.override.yml

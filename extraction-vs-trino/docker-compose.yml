@@ -1,0 +1,188 @@
+# SoftClient4ES Arrow Flight SQL vs Trino's Elasticsearch connector.
+# Same Elasticsearch index, same host, same session. See METHODOLOGY.md.
+#
+# Lives in the softclient4es-benchmarks repo. Only `results/` is gitignored (a session that
+# backs a published number is committed deliberately -- see .gitignore).
+#
+# Host sizing: the three engine containers are capped at 4 GB each. Run the full
+# matrix with `orchestrate.py --stop-idle-engine` and only two are ever up at once,
+# so the Docker VM needs >= 10 GB and >= 12 CPUs. The client process runs on the
+# HOST, not in a container, and Trino's S1/S2 fetchall() needs a further
+# ~8-15 GB of host RAM -- so >= 32 GB of host memory in total.
+services:
+  elasticsearch:
+    image: elasticsearch:8.18.3            # same image string the arrow repo's CI uses
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false       # both stacks run auth-less: identical (zero) auth cost
+      - ES_JAVA_OPTS=-Xms2g -Xmx2g
+    ports: ["9200:9200"]
+    # Named volume, added 2026-08-07. Previously the index lived in the container's
+    # writable layer, so `docker compose down` silently destroyed the 10M-row corpus and
+    # the next session would regenerate it -- a slow, easy-to-miss reset in the middle of
+    # a multi-hour matrix. Generation is the expensive step; keep it outside the container
+    # lifecycle. Reset deliberately with `docker compose down -v`.
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+    mem_limit: 4g
+    cpus: 4
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  flight-sql:
+    # The published results were measured on 0.2.5; override with SIDECAR_TAG in .env to
+    # measure a different image. Each session records the resolved image digest in
+    # results/<session>/sidecar-image.txt.
+    image: softnetwork/softclient4es8-arrow-flight-sql:${SIDECAR_TAG:-0.2.5}
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    environment:
+      - ELASTIC_HOST=elasticsearch
+      - ELASTIC_PORT=9200
+      # Heap pinned to match Elasticsearch's explicit 2 GB. Without this the JVM's
+      # default MaxRAMPercentage (25%) would give the sidecar only ~1 GB of the 4 GB
+      # container while Trino's image default takes ~80% -- an accidental asymmetry.
+      #
+      # This MUST go through JAVA_OPTS, never JAVA_TOOL_OPTIONS: the image bakes the
+      # Arrow allocator's required --add-opens (including
+      # java.base/java.nio=org.apache.arrow.memory.core) into JAVA_TOOL_OPTIONS, and
+      # setting that variable here would REPLACE them and break startup. The
+      # sbt-native-packager launcher appends JAVA_OPTS (verified in the image at
+      # /opt/docker/bin/softclient4es8-arrow-flight-sql).
+      #
+      # NO -Dlogback.configurationFile, and no mounted logback.xml, since arrow#138 (FIXED,
+      # closed 2026-08-07). The image now ships a logback.xml inside the server jar that
+      # already reads SOFTCLIENT4ES_LOG_LEVEL and already pins the wire loggers at WARN
+      # independently of the root level. Overriding it bought nothing and cost a session:
+      # the file we used to mount hardcoded <root level="INFO">, which silently won over
+      # the environment variable and made a whole "warnlog" run a mislabelled INFO run.
+      #
+      # The sidecar is now "as shipped, plus one documented environment variable", which is
+      # a stronger fairness position than configuring it ourselves.
+      - JAVA_OPTS=-Xms2g -Xmx2g
+      # MANDATORY for a valid measurement -- log volume must be comparable between the
+      # two engines, and at INFO it is not. Measured over one full matrix session:
+      #
+      #   Trino          10,265 lines, of which ONE per query
+      #                  ("QueryMonitor TIMELINE: ... FINISHED :: elapsed 26446ms");
+      #                  the bulk is a one-time startup config dump.
+      #   SoftClient4ES  26,933 lines, including 21,210 "Scroll progress: N docs,
+      #                  N batches, N docs/sec" -- about 731 PER 10M-row extraction,
+      #                  emitted from the akka dispatcher thread doing the extraction.
+      #
+      # Trino's logging is O(queries); ours is O(rows / batch). Nominally identical
+      # levels are therefore NOT comparable behaviour, and the gap widens with data
+      # size. WARN removes the per-batch progress chatter and leaves both engines
+      # logging only what they emit per query.
+      #
+      # This is disclosed, not hidden: RESULTS section 1 records it, and the earlier
+      # INFO-level sessions are retained for comparison. The wire loggers are pinned at
+      # WARN independently of this value (see sidecar/logback.xml), so no level set here
+      # can expose document payloads.
+      #
+      # THIS VARIABLE WAS INERT UNTIL 2026-08-10. sidecar/logback.xml is mounted OVER the
+      # image's config and hardcoded <root level="INFO">, which silently won. The session
+      # labelled "warnlog" (results/20260809T085738) therefore ran at INFO, and its
+      # "WARN is performance-neutral" reading was unfounded -- both sessions were INFO,
+      # so of course they matched. Corrected in RESULTS section 1. After ANY change here,
+      # verify the level actually took effect:
+      #   docker logs <sidecar> | grep -oE '\b(DEBUG|INFO|WARN|ERROR)\b' | sort | uniq -c
+      #
+      # Parametrised so the INFO-vs-WARN question can actually be MEASURED rather than
+      # asserted -- that is the whole lesson of the correction above. WARN remains the
+      # default, so a normal run is still a WARN run:
+      #   SOFTCLIENT4ES_LOG_LEVEL=INFO docker compose up -d --force-recreate flight-sql
+      - SOFTCLIENT4ES_LOG_LEVEL=${SOFTCLIENT4ES_LOG_LEVEL:-WARN}
+      # Defensive raise only. The 120s default bounds schema-probe / materialize awaits
+      # and PER-BATCH stream pulls -- it is NOT a total-extraction cap, so it would not
+      # have aborted a 10M-row stream anyway. METHODOLOGY must not claim otherwise.
+      - ARROW_QUERY_TIMEOUT_SECONDS=1800
+      # --- JOIN memory model (arrow#141, fixed in 0.2.5-SNAPSHOT) ---------------------
+      # Three DIFFERENT resources, three knobs. They must never be summed into one
+      # "effective cap": DuckDB already composes memory+spill by itself, and inflating
+      # its RAM limit by the disk budget stops it spilling until the container is dead.
+      #
+      # 1. DuckDB's native RAM ceiling. SPILLABLE -- it overflows to spill-dir.
+      - ARROW_JOIN_MAX_MEMORY=512m
+      # 2. The Arrow extraction budget for the JOIN legs, shared equally between them.
+      #    JVM memory, UN-spillable: no temp directory can rescue it, so this is the
+      #    ceiling that actually bounds how big a JOIN can be. Left unset it falls back
+      #    to max-memory (256m => 128 MB per leg on a 2-table join), which is far too
+      #    small for benchmark-scale legs.
+      - ARROW_JOIN_MAX_EXTRACTION_MEMORY=1g
+      # 3. Where DuckDB spills, and how much it may write. Verified disk-backed here:
+      #    /tmp is `overlay` in this image, NOT tmpfs -- on tmpfs or a k8s emptyDir with
+      #    medium=Memory, spilling would consume RAM and this setting would be a trap.
+      #    Bounded deliberately: the built-in default is 25% of the volume, and DuckDB's
+      #    own default would be 90% of available disk -- enough to fill the host.
+      - ARROW_JOIN_SPILL_DIR=/tmp/softclient4es/duckdb-spill
+      - ARROW_JOIN_MAX_SPILL_SIZE=4g
+      # ARROW_MAX_MEMORY (root allocator limit, arrow#146) is deliberately NOT set.
+      # Every session so far ran with the allocator unlimited; introducing a ceiling at
+      # the same time as a new build would confound the extraction comparison with a new
+      # failure mode. The cost is that /health/ready cannot evaluate allocator headroom
+      # -- liveness, which is what wait_healthy needs, is unaffected. Set it when the
+      # question is "how does the sidecar behave under a memory ceiling", not before.
+      # ARROW_BATCH_SIZE stays at its default 1000 == Trino elasticsearch.scroll-size.
+      #
+      # NO licence env is wired here on purpose: as committed, this service runs on
+      # Community (10k maxQueryResults), which rehearses every scenario end to end at
+      # --limit scale. Full 10M S1/S2 runs need an Enterprise licence, injected LOCALLY
+      # and only locally via a gitignored docker-compose.override.yml -- see the internal
+      # benchmark runbook. Nothing about licence provisioning belongs in this file.
+    # No volumes. The logback.xml mount was removed with arrow#138's fix; see JAVA_OPTS above.
+    #
+    # 32011 is the health endpoint (arrow#146). Published so the JSON body -- allocator
+    # stats, fatal-error latch, per-check results -- can be read from the host while a
+    # measurement is in flight:  curl -s localhost:32011/health | jq
+    ports: ["32010:32010", "32011:32011"]
+    mem_limit: 4g
+    cpus: 4
+    # NO healthcheck override, as of arrow#146. The image now ships a real probe:
+    #   GET /health, asserted 200, over bash /dev/tcp (the JRE image has no curl).
+    # What we had here before was a TCP connect to the Flight port, which reports
+    # healthy for a process that has latched a fatal error and can no longer serve --
+    # the blindness #146 was filed about. Overriding it would reintroduce exactly that,
+    # so this follows the same rule already applied to Trino: when the image ships a
+    # real probe, use it.
+    #
+    # The image polls on a 30s interval with a 30s start_period, so wait_healthy can take
+    # longer to observe readiness than the 5s probe it replaces (observed in practice:
+    # healthy within seconds of start). Accepted either way against a multi-hour matrix:
+    # a slower wait on a probe that means something beats a fast one that does not.
+    #
+    # Liveness only. Readiness (/health/ready) additionally checks allocator headroom,
+    # but only when ARROW_MAX_MEMORY gives the root allocator a real limit -- deliberately
+    # left unset here, see below.
+
+  trino:
+    image: trinodb/trino:483
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    volumes:
+      - ./trino/catalog:/etc/trino/catalog:ro
+    ports: ["8080:8080"]
+    mem_limit: 4g
+    cpus: 4
+    # Trino keeps its image-default heap policy (Initial/MaxRAMPercentage=80, so ~3.2 GB
+    # of this 4 GB container) -- MORE heap than either other engine gets. That asymmetry
+    # runs in Trino's favour and is deliberately left in place; RESULTS section 1 records
+    # the computed value.
+    #
+    # NO healthcheck override. The official image ships its own:
+    #   HEALTHCHECK --interval=10s --timeout=5s --start-period=10s \
+    #     CMD /usr/lib/trino/bin/health-check
+    # (verified on trinodb/trino master, core/docker/Dockerfile). Its hardened base
+    # may lack curl, so do NOT replace it with a curl probe. Watch readiness with
+    # `docker compose ps` (healthy), or from the HOST:
+    #   curl -sf http://localhost:8080/v1/info   -> "starting":false
+
+# Persists the generated corpus across container recreation. Deliberate reset:
+#   docker compose down -v
+volumes:
+  esdata:
