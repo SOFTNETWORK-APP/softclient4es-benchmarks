@@ -30,9 +30,11 @@ METRICS = [("wall_s", "wall-clock median (s)", 2),
 BASELINE = {"S1": ("flight", "trino"), "S1m": ("flight", "trino"),
             "S2": ("flight", "trino"),
             "S3": ("flight", "trino"), "S4": ("flight", "trino")}
-# Scenarios ES|QL can enter at all. Everywhere else it is absent BY PRODUCT LIMIT
+# ES|QL can only enter S1m/S3/S4 -- everywhere else it is absent BY PRODUCT LIMIT
 # (1,000,000-row ceiling), which RESULTS states rather than leaving as a blank.
-ESQL_SCENARIOS = ("S1m", "S3", "S4")
+# The table below does not filter on that list: it prints what was measured, so a
+# scenario ES|QL should not have been able to run would be visible rather than
+# silently dropped.
 
 
 def median_of(runs, key):
@@ -229,24 +231,31 @@ def main():
     # Published where it can run, absent where the product forbids it -- and the
     # absence is stated, because a blank cell reads as "not tested" when it is in
     # fact a 1,000,000-row ceiling.
+    # Driven by the RECORDED `route` field, not by a variant string. A variant is a
+    # label two layers can both write; a run that names its own wire format cannot
+    # be dropped from this table by a naming change. (It was: a doubled `arrow-arrow`
+    # tag silently omitted every Arrow run from the first Phase-2 session.)
     esql_rows_out = []
-    for scenario in ESQL_SCENARIOS:
-        for variant in ("", "arrow"):
-            runs = groups.get((scenario, "esql", variant))
-            if not runs:
-                continue
-            mem, mem_label = median_mem(runs)
-            esql_rows_out.append(
-                (scenario, variant or "json", median_of(runs, "wall_s"),
-                 median_of(runs, "cpu_s"), mem, mem_label, runs[0]["rows"], len(runs)))
+    for (scenario, stack, variant), runs in sorted(groups.items()):
+        if stack != "esql":
+            continue
+        mem, mem_label = median_mem(runs)
+        # The variant is its own column. Labelling by scenario + wire alone would
+        # print a drift block (or any sensitivity arm) as a second, identical-looking
+        # row with a different median -- a published table cannot have two rows that
+        # claim to be the same measurement.
+        esql_rows_out.append(
+            (scenario, runs[0].get("route") or "json", variant or "base",
+             median_of(runs, "wall_s"),
+             median_of(runs, "cpu_s"), mem, mem_label, runs[0]["rows"], len(runs)))
     if esql_rows_out:
         print("\n### ES|QL -- Elasticsearch's own query language\n")
-        print("| Scenario | Wire | Wall median (s) | Client CPU median (s) "
+        print("| Scenario | Wire | Arm | Wall median (s) | Client CPU median (s) "
               "| Peak client memory (MB) | Rows | Runs |")
-        print("|---|---|---|---|---|---|---|")
-        for sc, wire, wall, cpu, mem, lbl, rows, n in esql_rows_out:
-            print(f"| {sc} | {wire} | {wall:,.3f} | {cpu:,.3f} | {mem:,.0f} ({lbl}) "
-                  f"| {rows:,} | {n} |")
+        print("|---|---|---|---|---|---|---|---|")
+        for sc, wire, arm, wall, cpu, mem, lbl, rows, n in esql_rows_out:
+            print(f"| {sc} | {wire} | {arm} | {wall:,.3f} | {cpu:,.3f} "
+                  f"| {mem:,.0f} ({lbl}) | {rows:,} | {n} |")
         cap = next((r.get("esql_result_truncation_max_size")
                     for k, rs in groups.items() if k[1] == "esql" for r in rs), None)
         print(f"\n<!-- ES|QL ran with esql.query.result_truncation_max_size={cap}; "

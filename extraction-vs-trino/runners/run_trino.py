@@ -16,7 +16,7 @@ import time
 from trino.dbapi import connect
 
 from scenarios import (DEFAULT_INDEX, ENGINE_SERVICES, EXPECTED_COLS_TRINO_S1,
-                       SQL_AGG_DUCK, check, emit, guard_environment, host_load,
+                       SQL_AGG_DUCK, check, compose_variant, emit, guard_environment, host_load,
                        memory_pressure, net_bytes, net_bytes_all, net_delta,
                        peak_footprint_mb, peak_rss_mb, sql_for)
 
@@ -318,9 +318,8 @@ if __name__ == "__main__":
     # COMPOSES with an explicit --variant instead of being replaced by it, or
     # `--route connectorx --catalog elasticsearch_tuned` would file tuned runs
     # under the untuned `arrowcx` median.
-    variant = "-".join(t for t in (a.variant,
-                                   "" if a.catalog == "elasticsearch" else "tuned")
-                       if t)
+    variant = compose_variant(a.variant,
+                              "" if a.catalog == "elasticsearch" else "tuned")
     result["catalog"] = a.catalog
     emit({"stack": "trino-spooled" if a.encoding else "trino",
           "scenario": a.scenario, "index": a.index, "variant": variant,

@@ -31,7 +31,7 @@ import adbc_driver_flightsql.dbapi as dbapi
 
 from scenarios import (DEFAULT_INDEX, ENGINE_SERVICES, EXPECTED_MIN_COLS_FLIGHT_S1,
                        EXPECTED_ROWS, SQL_AGG_DUCK, check, emit, guard_environment,
-                       host_load, memory_pressure, net_bytes, net_bytes_all, net_delta,
+                       compose_variant, host_load, memory_pressure, net_bytes, net_bytes_all, net_delta,
                        peak_footprint_mb, peak_rss_mb, sql_for)
 
 # IP literal, NOT "localhost" (fix for arrow#151). The ADBC Flight SQL driver is
@@ -161,10 +161,10 @@ if __name__ == "__main__":
     result["net_es"] = net_delta(before_es, net_bytes("elasticsearch"))
     result["host_load_before"], result["host_load_after"] = load_before, host_load()
     emit({"stack": "flight", "scenario": a.scenario, "index": a.index,
-          # A non-default dial must never blend into the headline medians, and the
-          # tag composes with an explicit --variant rather than being replaced by it.
-          "variant": "-".join(t for t in (a.variant,
-                                          "" if a.dial == "ip" else f"dial{a.dial}")
-                              if t),
+          # A non-default dial must never blend into the headline medians; the tag
+          # composes with an explicit --variant and is deduped (orchestrate.py has
+          # already put the same tag in the filename).
+          "variant": compose_variant(a.variant,
+                                     "" if a.dial == "ip" else f"dial{a.dial}"),
           "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
           **result}, a.out)

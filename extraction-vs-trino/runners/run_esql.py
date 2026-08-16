@@ -41,7 +41,7 @@ import urllib.error
 import urllib.request
 
 from scenarios import (DEFAULT_INDEX, ESQL_MAX_RESULT_ROWS, ESQL_URL, S1M_ROWS,
-                       check, emit, esql_for, guard_environment, host_load,
+                       check, compose_variant, emit, esql_for, guard_environment, host_load,
                        memory_pressure, net_bytes, net_delta, peak_footprint_mb,
                        peak_rss_mb)
 
@@ -183,8 +183,7 @@ if __name__ == "__main__":
     # route is tagged, which keeps it out of those medians while still publishing
     # it. The tag composes with an explicit --variant rather than replacing it.
     emit({"stack": "esql", "scenario": a.scenario, "index": a.index,
-          "variant": "-".join(t for t in (a.variant,
-                                          "" if a.route == "json" else a.route)
-                              if t),
+          "variant": compose_variant(a.variant,
+                                     "" if a.route == "json" else a.route),
           "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
           **result}, a.out)
