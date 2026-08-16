@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SoftClient4ES vs Trino — benchmark cover</title>
+<link rel="stylesheet" href="report.css">
+</head>
+<body>
+
+<div class="cover">
+  <div class="cover-logo">
+    <img src="assets/logo-mark.png" alt="SoftClient4ES">
+    <div class="wordmark">SoftClient4ES</div>
+  </div>
+
+  <div class="cover-body">
+    <div class="cover-eyebrow">Benchmark report</div>
+    <h1>Extracting data<br>out of Elasticsearch</h1>
+    <div class="cover-rule"></div>
+    <p class="deck">
+      SoftClient4ES over Arrow Flight SQL, measured against Trino's Elasticsearch
+      connector — same host, same cluster, same 10-million-row index, back to back.
+    </p>
+
+    <dl class="cover-facts">
+      <div><dt>Dataset</dt><dd>10,000,000<small>rows · 8 columns</small></dd></div>
+      <div><dt>SoftClient4ES</dt><dd>0.2.5<small>Arrow Flight SQL sidecar</small></dd></div>
+      <div><dt>Trino</dt><dd>483<small>Elasticsearch connector</small></dd></div>
+      <div><dt>Elasticsearch</dt><dd>8.18.3<small>single node</small></dd></div>
+    </dl>
+
+  </div>
+
+  <!-- Sibling of .cover-body, not a child: as a child it dragged the whole title
+       block to the foot of the page. It pins itself to the bottom on its own. -->
+  <div class="cover-foot">
+    <div><strong>softclient4es.dev</strong> &nbsp;·&nbsp; Reproducible harness, released build only</div>
+    <div>August 2026</div>
+  </div>
+</div>
+</body>
+</html>

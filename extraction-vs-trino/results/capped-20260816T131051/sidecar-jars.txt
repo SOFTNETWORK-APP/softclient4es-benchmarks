@@ -1,0 +1,11 @@
+a2b27a2c27c4287a5bfa2d47bd317cc352ef2392426f5bfa5003f0602b12b96c  /opt/docker/lib/app.softnetwork.elastic.softclient4es-arrow-core-0.2.5.jar
+5c9f8e2b5318fd3278516b222d53f854e40bcd4314494161f8ddf8d070c762d4  /opt/docker/lib/app.softnetwork.elastic.softclient4es-arrow-flight-sql-0.2.5.jar
+56605249f92f12b2cad309e4e58f5748fd3f19680943aa7eb0889806af82453b  /opt/docker/lib/app.softnetwork.elastic.softclient4es-arrow-join-0.2.5.jar
+309685117d25ab00432a96dfe5c57474e83259c4c3e1de61a394742804d50c79  /opt/docker/lib/app.softnetwork.elastic.softclient4es-community-extensions_2.13-0.2.4.jar
+4ef92fde4e4ced20664dbbb5c335836ab84405deae1538dce7b96e816d75fa3c  /opt/docker/lib/app.softnetwork.elastic.softclient4es-core_2.13-0.20.4.jar
+985be2c04b47c56cf978b9d747a9cab76e09ac04b2e9ef0483b2826930681265  /opt/docker/lib/app.softnetwork.elastic.softclient4es-licensing_2.13-0.20.4.jar
+924b97a9edccf265a750d3a6f4e43beb3ec2facbe79e22ee34bc76702ce878f3  /opt/docker/lib/app.softnetwork.elastic.softclient4es-macros_2.13-0.20.4.jar
+76d0c5570bdb237147d4691df0e05fdc50d1f766d00bdeb02ed2db3e9da41227  /opt/docker/lib/app.softnetwork.elastic.softclient4es-sql_2.13-0.20.4.jar
+faac5ddd4b6eec84b084e634c0ea1c7359a42a0401b66fc74e91f3ad081ead33  /opt/docker/lib/app.softnetwork.elastic.softclient4es8-arrow-flight-sql-0.2.5.jar
+55a6851cd401ac99f74eb78de1bfa02ab05f80031e79eb930481e7b3b1cebddf  /opt/docker/lib/app.softnetwork.elastic.softclient4es8-java-client_2.13-0.20.4.jar
+ddce80f5826fb6205aa76c3adfb817c021ce75eae9ee4656983b30a9755826e9  /opt/docker/lib/app.softnetwork.elastic.softclient4es8-sql-bridge_2.13-0.20.4.jar

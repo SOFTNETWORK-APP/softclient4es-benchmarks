@@ -92,10 +92,23 @@ runs on Community and reproduces every scenario at reduced (`--limit`) scale.
 - **One flat mapping, no nested fields or arrays.** This avoids Trino's documented gaps in those
   types, so the connector is not handicapped; it also means the benchmark says nothing about SQL
   coverage, only about extraction efficiency.
-- **Single primary shard.** Trino's connector creates one split per shard, so it read with a single
-  reader and its scan parallelism was not exercised. A multi-shard index (the optional "S1b"
-  sensitivity run) would only *improve* Trino's numbers, so it was not run: the single-shard setup
-  is the conservative choice, and it is stated wherever the JOIN and S1 results appear.
+- **Single primary shard in the main results — and that setup favours SoftClient4ES on
+  wall-clock.** Trino's connector creates one split per shard, so a single-shard index gives it one
+  reader and its scan parallelism is not exercised. Note what bounds this: the *shard* count, not
+  the node count — additional Trino workers cannot split a single reader.
+
+  This is no longer left as a caveat. **RESULTS section 6 publishes the measured sensitivity run:**
+  the same corpus regenerated from the same seed into a 5-shard index, read by a real 3-node Trino
+  cluster (dedicated coordinator + 2 workers, `node-scheduler.include-coordinator=false`) given
+  6 CPU / 8 GB against SoftClient4ES's 4 CPU / 4 GB. Trino's plan used 5 scan splits across its two
+  workers, read back from `system.runtime.tasks`. Both engines get faster; the S1 gap widens from
+  1.43× to 1.60×; client CPU, peak client memory and the 2 GB container threshold do not move; the
+  `GROUP BY` still moves 0 bytes against 1.4 GB. Trino's own largest gain in the whole benchmark
+  appears there too — its aggregation wall-clock improves 4.7× — and is published as such.
+
+  The distinction the run establishes: **wall-clock is topology-sensitive; client cost and pushdown
+  are not.** The client is one process consuming one wire format however large the cluster, and the
+  connector pushes no aggregation down at any shard count. That is now measured rather than argued.
 - **Trino's spooling protocol was not benchmarked separately.** The optional "S1-spooled" variant
   (Trino's `json+zstd` spooling client) is superseded by the S1/S1r fairness comparison against
   connectorx and the ADBC Trino driver, which measure Trino's fastest *columnar* clients directly —

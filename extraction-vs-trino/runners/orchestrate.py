@@ -26,13 +26,15 @@ import subprocess
 import sys
 import time
 
-from scenarios import REQUIRED_STACKS, SCENARIOS
+from scenarios import (ENGINE_SERVICES, REQUIRED_STACKS, SCENARIOS,
+                       wait_trino_cluster)
 
 HERE = pathlib.Path(__file__).resolve().parent
 RESULTS = HERE.parent / "results"
 RUNNERS = {"es-raw": "run_es.py", "flight": "run_flight.py", "trino": "run_trino.py"}
-# Which compose service each stack needs up; used by --stop-idle-engine.
-ENGINE_OF = {"flight": "flight-sql", "trino": "trino"}
+# Which compose services each stack needs up; used by --stop-idle-engine.
+# Trino is a 3-node cluster, so this is a LIST per stack -- see scenarios.py.
+ENGINE_OF = ENGINE_SERVICES
 
 
 # Set once in main() from --dtype-backend / --frame. Only the flight/trino
@@ -174,15 +176,19 @@ def set_engines(active_stack, enabled):
     or CPU while the other stack is being measured."""
     if not enabled:
         return
-    for stack, service in ENGINE_OF.items():
+    for stack, services in ENGINE_OF.items():
         action = "start" if stack == active_stack else "stop"
-        subprocess.run(["docker", "compose", action, service],
+        subprocess.run(["docker", "compose", action, *services],
                        cwd=str(HERE.parent), capture_output=True, timeout=300)
     # Only AFTER the stops, so the engine under test warms up without the other
     # competing for CPU, and so we never start measuring before it can serve.
-    service = ENGINE_OF.get(active_stack)
-    if service:
+    for service in ENGINE_OF.get(active_stack, []):
         wait_healthy(service)
+    # Every container healthy still is not a formed cluster: the workers register
+    # with the coordinator afterwards, and a query issued in that window runs on
+    # fewer nodes than the run claims to have measured.
+    if active_stack == "trino":
+        wait_trino_cluster()
 
 
 def acquire_single_run_lock():

@@ -41,22 +41,28 @@ import time
 HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parent
 RESULTS = ROOT / "results"
+from scenarios import ENGINE_SERVICES, wait_trino_cluster
+
 IMAGE = "sc4es-bench-client:latest"
 NETWORK = "extraction-vs-trino_default"
-IDLE_ENGINE = {"flight": "trino", "trino": "flight-sql"}
-ENGINE_SERVICE = {"flight": "flight-sql", "trino": "trino"}
+# Trino is a 3-node cluster, so both sides of this are LISTS: stopping only the
+# coordinator would leave two idle JVMs holding CPU and RAM inside the shared VM
+# while the other engine is measured. Single source of truth in scenarios.py.
+IDLE_ENGINE = {"flight": ENGINE_SERVICES["trino"], "trino": ENGINE_SERVICES["flight"]}
+ENGINE_SERVICE = ENGINE_SERVICES
 
 
 def set_engines(active):
-    subprocess.run(["docker", "compose", "stop", IDLE_ENGINE[active]],
+    subprocess.run(["docker", "compose", "stop", *IDLE_ENGINE[active]],
                    cwd=str(ROOT), capture_output=True, timeout=180)
-    subprocess.run(["docker", "compose", "start", ENGINE_SERVICE[active]],
+    subprocess.run(["docker", "compose", "start", *ENGINE_SERVICE[active]],
                    cwd=str(ROOT), capture_output=True, timeout=180)
     deadline = time.time() + 300
     while time.time() < deadline:
         r = subprocess.run(["docker", "compose", "ps", "--format", "json",
-                            ENGINE_SERVICE[active]],
+                            *ENGINE_SERVICE[active]],
                            cwd=str(ROOT), capture_output=True, text=True, timeout=60)
+        ready = set()
         for line in r.stdout.splitlines():
             line = line.strip()
             if not line.startswith("{"):
@@ -65,10 +71,18 @@ def set_engines(active):
                 row = json.loads(line)
             except json.JSONDecodeError:
                 continue
+            # A service with no healthcheck reports "" -- running is the best signal.
             if row.get("Health") in ("healthy", "") and row.get("State") == "running":
-                return
+                ready.add(row.get("Service") or row.get("Name"))
+        # EVERY service of the active stack must be up, not merely the first one to
+        # answer: a healthy Trino coordinator whose workers have not started would
+        # otherwise read as ready, and the run would measure a 1-node cluster.
+        if len(ready) >= len(ENGINE_SERVICE[active]):
+            if active == "trino":
+                wait_trino_cluster()
+            return
         time.sleep(5)
-    sys.exit(f"{ENGINE_SERVICE[active]} did not become healthy -- aborting")
+    sys.exit(f"{ENGINE_SERVICE[active]} did not all become healthy -- aborting")
 
 
 def one(engine, cap_mb, idx, timeout=3600):

@@ -1,0 +1,3 @@
+index=bench_events_10m_s5
+caps=2g
+engines=flight trino
