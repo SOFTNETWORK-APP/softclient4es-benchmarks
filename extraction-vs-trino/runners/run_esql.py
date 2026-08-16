@@ -40,7 +40,7 @@ import time
 import urllib.error
 import urllib.request
 
-from scenarios import (DEFAULT_INDEX, ESQL_MAX_RESULT_ROWS, ESQL_URL, S1M_ROWS,
+from scenarios import (COLUMNS, DEFAULT_INDEX, ESQL_MAX_RESULT_ROWS, ESQL_URL, S1M_ROWS,
                        check, emit, esql_for, guard_environment, host_load,
                        memory_pressure, net_bytes, net_delta, peak_footprint_mb,
                        peak_rss_mb)
@@ -154,8 +154,25 @@ def probe_join(left, right):
                 "reason": reason}
 
 
+def probe_truncation(index):
+    """Record what ES|QL does when asked for more rows than it can return.
+
+    The benchmark's most load-bearing ES|QL statement -- that a request above the
+    ceiling comes back truncated, HTTP 200, with no Warning header -- was for a
+    while the one claim in RESULTS with no artifact behind it. It is a probe, not
+    a timed scenario: what it records is a row count and a header, not a duration.
+    """
+    ceiling = effective_max_rows()
+    query = f"FROM {index} | KEEP {', '.join(COLUMNS)} | LIMIT 10000000"
+    rows, cols, warning, nbytes = esql(query, "json")
+    return {"query": query, "requested_rows": 10_000_000, "rows_returned": rows,
+            "http_status": 200,          # urlopen raises on anything else
+            "warning_header": warning,
+            "esql_result_truncation_max_size": ceiling,
+            "truncated_silently": rows < 10_000_000 and warning is None}
+
+
 if __name__ == "__main__":
-    guard_environment()
     p = argparse.ArgumentParser()
     p.add_argument("--scenario", default="S3", choices=SCENARIOS)
     p.add_argument("--index", default=DEFAULT_INDEX)
@@ -164,8 +181,24 @@ if __name__ == "__main__":
     p.add_argument("--variant", default="")
     p.add_argument("--probe-join", nargs=2, metavar=("LEFT", "RIGHT"),
                    help="record ES|QL's answer to a cross-index JOIN and exit")
+    p.add_argument("--probe-truncation", action="store_true",
+                   help="record what a request above the row ceiling returns, and exit")
     p.add_argument("--out")
     a = p.parse_args()
+
+    # The environment guard protects TIMINGS -- it refuses a host whose memory or
+    # CPU state would make a wall clock fiction. A probe records a row count and a
+    # response header and publishes no duration, so gating it on host fitness only
+    # means the evidence cannot be captured on a busy machine. Measured runs below
+    # are still guarded.
+    if not (a.probe_truncation or a.probe_join):
+        guard_environment()
+
+    if a.probe_truncation:
+        emit({"stack": "esql", "scenario": "truncation-probe", "index": a.index,
+              "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+              **probe_truncation(a.index)}, a.out)
+        raise SystemExit(0)
 
     if a.probe_join:
         emit({"stack": "esql", "scenario": "J-probe",

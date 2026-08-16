@@ -1,0 +1,1 @@
+{"stack": "esql", "scenario": "J-probe", "ts": "2026-08-16T20:38:31Z", "query": "FROM bench_1m | LOOKUP JOIN bench_events_10m ON id | LIMIT 5", "outcome": "rejected", "status": 400, "reason": "Found 1 problem\nline 1:29: invalid [bench_events_10m] resolution in lookup mode to an index in [standard] mode"}

@@ -5,18 +5,35 @@
 The data path under test:
 
 ```text
-Elasticsearch → row-serialized documents out of the cluster
+Elasticsearch → row-serialized documents out of the cluster (the _search / _sql path
+                both engines read; ES|QL's columnar Arrow output is a third path,
+                measured separately and capped at 1,000,000 rows)
              → SoftClient4ES: converted to Arrow ONCE at the sidecar, streamed as
                Arrow batches, consumed by the client with no further deserialization
              → Trino: parsed into Trino's columnar pages, re-serialized to Trino's
                row-oriented client protocol, re-parsed value-by-value in the client
 ```
 
-**Every client pays the Elasticsearch serialization leg.** Elasticsearch hands external clients
-row-serialized documents (JSON by default; the SQL endpoint can also emit CSV/TSV/CBOR/Smile). None
-is columnar, and this benchmark never claims to avoid that step. What it measures is what happens
-*after* it: SoftClient4ES serializes to Arrow once and the client consumes that columnar buffer
-directly, while Trino re-serializes to a row protocol the client must parse again.
+**Every client pays an Elasticsearch serialization leg.** Nothing leaves the cluster unserialized,
+and this benchmark never claims to avoid that step.
+
+For the SQL and JDBC path it is about, that serialization is **row-shaped**: `_search` returns JSON,
+and the SQL endpoint offers CSV, TSV, YAML and the binary CBOR and Smile — every one of them a
+row-serialized document encoding. Elastic's own JDBC driver is a client of that endpoint.
+
+**One Elasticsearch format is columnar**, and it is measured here rather than glossed over: ES|QL's
+`format=arrow` returns an Apache Arrow IPC stream (`content-type:
+application/vnd.apache.arrow.stream`, verified on Elasticsearch 8.18.3). It is fast: below its
+ceiling it *extracts* faster than either engine in this benchmark — though not on the pushed-down
+aggregation, where SoftClient4ES is 5× faster. The ES|QL section of RESULTS publishes both.
+
+That ceiling is the reason it appears in three scenarios and not in the rest: `esql.query.result_truncation_max_size` defaults to 10,000 rows and
+is declared with a hard maximum of 1,000,000, so ES|QL cannot return a ten-million-row result at
+all — and above the configured ceiling it truncates with HTTP 200 and no `Warning` header.
+
+What this benchmark measures is what happens *after* the serialization leg, on the path a SQL client
+takes: SoftClient4ES serializes to Arrow once and the client consumes that columnar buffer directly,
+while Trino re-serializes to a row protocol the client must parse again.
 
 So this benchmark measures **large result-set extraction and client-side consumption** — wall-clock,
 client CPU, peak client memory — which is where the client representation dominates. It does **not**

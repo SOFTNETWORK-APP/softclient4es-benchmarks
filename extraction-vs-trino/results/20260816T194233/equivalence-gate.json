@@ -1,0 +1,17 @@
+{
+  "index": "bench_events_10m",
+  "s3_groups": {
+    "flight": 100,
+    "trino": 100,
+    "esql": 100
+  },
+  "terms_error": {
+    "buckets": 100,
+    "doc_count_error_upper_bound": 0,
+    "sum_other_doc_count": 0,
+    "terms_size": 65536
+  },
+  "failures": [],
+  "skipped": [],
+  "verdict": "PASS"
+}

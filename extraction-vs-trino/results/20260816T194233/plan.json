@@ -1,0 +1,12 @@
+{
+  "warmups": 2,
+  "runs": 5,
+  "index": "bench_events_10m",
+  "variant": "dialhostname",
+  "plan": [
+    [
+      "S4",
+      "flight"
+    ]
+  ]
+}
