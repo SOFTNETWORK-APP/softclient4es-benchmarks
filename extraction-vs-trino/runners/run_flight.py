@@ -31,8 +31,8 @@ import adbc_driver_flightsql.dbapi as dbapi
 
 from scenarios import (DEFAULT_INDEX, ENGINE_SERVICES, EXPECTED_MIN_COLS_FLIGHT_S1,
                        EXPECTED_ROWS, SQL_AGG_DUCK, check, emit, guard_environment,
-                       memory_pressure, net_bytes, net_bytes_all, net_delta, peak_footprint_mb,
-                       peak_rss_mb, sql_for)
+                       host_load, memory_pressure, net_bytes, net_bytes_all, net_delta,
+                       peak_footprint_mb, peak_rss_mb, sql_for)
 
 # IP literal, NOT "localhost" (fix for arrow#151). The ADBC Flight SQL driver is
 # Go; for a HOSTNAME its resolver issues real DNS queries (grpc-go's resolver,
@@ -42,19 +42,27 @@ from scenarios import (DEFAULT_INDEX, ENGINE_SERVICES, EXPECTED_MIN_COLS_FLIGHT_
 # Measured here: 60 connects to "localhost" -> median 92 ms, outliers 5.2/10.1 s;
 # 60 connects to "127.0.0.1" -> median 3 ms, no outliers. Raw TCP (0.04 ms) and
 # the C++ pyarrow client (1.6 ms) show the server was never the cost.
-FLIGHT_URL = "grpc://127.0.0.1:32010"
-SCENARIOS = ["S1", "S1r", "S2", "S3", "S4"]
+#
+# ⚠️ THE DIAL IS A PUBLISHED FIGURE, NOT A HIDDEN OPTIMISATION. It is worth ~90 ms
+# of connect time, which is larger than the whole margin in the S4 control
+# (40 ms vs 57 ms), so S4 measured only by IP would rest a parity claim on an
+# undisclosed choice. `--dial hostname` measures the other side of it so both are
+# published, and the deployment guidance (IP literals or connection reuse with
+# the Go driver) is what the difference is FOR.
+FLIGHT_URLS = {"ip": "grpc://127.0.0.1:32010", "hostname": "grpc://localhost:32010"}
+FLIGHT_URL = FLIGHT_URLS["ip"]
+SCENARIOS = ["S1", "S1m", "S1r", "S2", "S3", "S4"]
 
 
-def run(scenario, index, dtype_backend="default", frame="pandas"):
+def run(scenario, index, dtype_backend="default", frame="pandas", dial="ip"):
     sql = sql_for(scenario, index)
     t0, c0 = time.perf_counter(), time.process_time()
-    conn = dbapi.connect(FLIGHT_URL)
+    conn = dbapi.connect(FLIGHT_URLS[dial])
     cur = conn.cursor()
     connect_s = time.perf_counter() - t0
     q0 = time.perf_counter()
-    out = {}
-    if scenario == "S1":
+    out = {"dial": dial}
+    if scenario in ("S1", "S1m"):
         cur.execute(sql)
         tbl = cur.fetch_arrow_table()          # materialized client-side table
         out["rows"], out["cols"] = tbl.num_rows, tbl.num_columns
@@ -110,9 +118,10 @@ def run(scenario, index, dtype_backend="default", frame="pandas"):
     conn.close()
 
     check(scenario, out)
-    if scenario == "S1":
+    if scenario in ("S1", "S1m"):
         assert out["cols"] >= EXPECTED_MIN_COLS_FLIGHT_S1, (
-            f"S1: expected >= {EXPECTED_MIN_COLS_FLIGHT_S1} columns, got {out['cols']}")
+            f"{scenario}: expected >= {EXPECTED_MIN_COLS_FLIGHT_S1} columns, "
+            f"got {out['cols']}")
         # Hit-metadata columns beyond the 8 selected -- recorded, never hidden.
         # METHODOLOGY section 6 publishes the observed list.
         out["extra_cols"] = out["cols"] - EXPECTED_MIN_COLS_FLIGHT_S1
@@ -129,6 +138,10 @@ if __name__ == "__main__":
                    help="S1r only: numpy-backed (default) or Arrow-backed DataFrame")
     p.add_argument("--frame", default="pandas", choices=["pandas", "polars"],
                    help="S1r only: which frame library the result lands in")
+    p.add_argument("--dial", default="ip", choices=list(FLIGHT_URLS),
+                   help="how the sidecar is addressed: IP literal (default) or "
+                        "hostname, whose Go-driver DNS lookup is published as a "
+                        "cost rather than avoided silently")
     p.add_argument("--out")
     a = p.parse_args()
     assert a.scenario in EXPECTED_ROWS, a.scenario
@@ -136,16 +149,22 @@ if __name__ == "__main__":
         raise SystemExit("--dtype-backend is a pandas concept; do not combine with --frame polars")
 
     before = net_bytes_all(ENGINE_SERVICES["flight"])
+    load_before = host_load()
     # Bytes that actually LEFT Elasticsearch. Summing the engine stack instead
     # double-counts internal traffic once the engine is a cluster: measured
     # 2026-08-16, engine-stack rx for S1 was 3,671 MB against ~2,950 MB truly
     # read from ES, the difference being the worker->coordinator exchange.
     # Sampled at the source, the number is independent of engine topology.
     before_es = net_bytes("elasticsearch")
-    result = run(a.scenario, a.index, a.dtype_backend, a.frame)
+    result = run(a.scenario, a.index, a.dtype_backend, a.frame, a.dial)
     result["net"] = net_delta(before, net_bytes_all(ENGINE_SERVICES["flight"]))
     result["net_es"] = net_delta(before_es, net_bytes("elasticsearch"))
+    result["host_load_before"], result["host_load_after"] = load_before, host_load()
     emit({"stack": "flight", "scenario": a.scenario, "index": a.index,
-          "variant": a.variant,
+          # A non-default dial must never blend into the headline medians, and the
+          # tag composes with an explicit --variant rather than being replaced by it.
+          "variant": "-".join(t for t in (a.variant,
+                                          "" if a.dial == "ip" else f"dial{a.dial}")
+                              if t),
           "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
           **result}, a.out)
