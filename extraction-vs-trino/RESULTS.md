@@ -13,9 +13,11 @@ almost no data off it — an aggregation returning 100 rows moves **0 vs 1.4 GB*
 extractions it runs in far less client memory: it lands 10M rows in a **2 GB** container where
 Trino's client needs more, and completes **five concurrent extractions in an 8 GB budget where Trino
 completes none**. It is also faster, because it delivers Arrow columnar batches the client consumes
-directly, where Trino's Python client materialises rows into Python objects. Trino remains marginally
-ahead on cross-index joins and offers capabilities (distributed execution, spill, connector breadth)
-this single-node extraction benchmark does not exercise.
+directly, where Trino's Python client materialises rows into Python objects. These results hold on a
+**5-shard index read by a 3-node Trino cluster given 1.5x the CPU** — where the extraction gap widens
+rather than closes (section 6). Trino remains marginally ahead on cross-index joins, gains the most
+from shard parallelism on aggregate-heavy work, and offers capabilities (distributed execution, spill,
+connector breadth) this benchmark does not exercise.
 
 All figures below were measured on the **released** sidecar image
 `softnetwork/softclient4es8-arrow-flight-sql:0.2.5`
@@ -33,6 +35,7 @@ All figures below were measured on the **released** sidecar image
 | Index | `bench_events_10m` — 10,000,000 documents, flat mapping, 1 primary shard, 0 replicas, force-merged (916 MB) |
 | Host | Apple M4 Max, macOS (Darwin arm64), Docker Desktop VM 10 CPU / 15.6 GiB |
 | Container limits | Elasticsearch, sidecar, Trino each capped at 4 CPU / 4 GB (heap 2 GB) |
+| Sensitivity topology (§6) | `bench_events_10m_s5` — same corpus, same seed, **5 primary shards**; Trino as a 3-node cluster (coordinator + 2 workers, 6 CPU / 8 GB total) |
 | Runs | ≥2 warm-ups, then ≥5 measured runs per cell; each run in a fresh client process. Tables show the median and the min–max spread. |
 
 **Client libraries** (identical versions on both sides where a library is shared):
@@ -54,7 +57,9 @@ All figures below were measured on the **released** sidecar image
 **Metrics.** *Wall* is end-to-end time including connection. *Client CPU* is `time.process_time()`
 in the client process. *Peak client memory* is the process's peak physical footprint
 (`ri_lifetime_max_phys_footprint`), which is immune to the macOS memory compressor. *ES wire* is the
-bytes read from Elasticsearch, measured from the container network counters. Every run asserts the
+bytes that left Elasticsearch, measured from container network counters — sampled at the
+Elasticsearch container itself, so the figure does not depend on how many containers the engine is
+made of. Every run asserts the
 exact expected row count before its timing is recorded; a run that returns the wrong number of rows
 is discarded, not reported.
 
@@ -73,6 +78,7 @@ is discarded, not reported.
 | **S5** | Does the extraction fit in a constrained-memory container? | SoftClient4ES fits **2 GB**; Trino's stock client needs >8 GB, its fastest client 3 GB |
 | **S6** | How many concurrent extractions fit in an 8 GB budget? | SoftClient4ES **5** (50M rows); Trino **0** |
 | **J0–J2** | Cross-index JOIN landed as a DataFrame | Trino marginally faster on wall (5–9%); SoftClient4ES does 5–20× less client work |
+| **§6** | Do the results survive a 5-shard index read by a 3-node Trino? | Yes — the S1 gap **widens to 1.60×**; client cost and pushdown unchanged; Trino's `GROUP BY` gains 4.7× |
 
 ---
 
@@ -308,10 +314,64 @@ SoftClient4ES (+2.1 s vs +0.9 s), so on join-side aggregation Trino is the more 
 
 ---
 
-## 6. Where Trino is stronger
+## 6. Index topology sensitivity — 5 shards, read by a 3-node Trino
+
+Everything above was measured on a single-shard index. Trino's Elasticsearch connector creates one
+split per shard, so a single-shard index gives it a single reader — which invites the fair question
+of whether these results survive an index that lets Trino parallelise, read by a Trino cluster
+rather than one node.
+
+They do, and the extraction gap widens.
+
+**Setup.** Same host, same corpus regenerated from the same seed into a **5-shard** index, one
+segment per shard. Trino runs as a real cluster — a dedicated coordinator plus two workers, with
+`node-scheduler.include-coordinator=false` so the coordinator plans and serves results while the
+workers scan. Trino is deliberately given **6 CPU / 8 GB against SoftClient4ES's 4 CPU / 4 GB**:
+1.5× the CPU and 2× the memory. Medians of 5 runs after 2 warm-ups, as everywhere else. Trino's
+query plan used **5 scan splits spread across its two workers**, read back from
+`system.runtime.tasks`, so the parallelism under test was genuinely exercised.
+
+| Metric | SoftClient4ES 1 shard | **5 shards** | Trino 1 shard | **5 shards** |
+|---|---|---|---|---|
+| S1 wall | 37.1 s | **27.8 s** | 53.1 s | **44.7 s** |
+| S1 client CPU | 4.6 s | 3.8 s | 25.1 s | 24.1 s |
+| S1 peak client memory | 900 MB | 919 MB | 4,472 MB | 4,466 MB |
+| S1 ES wire | 2,494 MB | 2,553 MB | 2,926 MB | 2,949 MB |
+| S3 wall (`GROUP BY`, 100 rows) | 0.04 s | 0.04 s | 27.0 s | **5.8 s** |
+| S3 ES wire | 0 MB | **0 MB** | 1,394 MB | 1,419 MB |
+| S5 — 10M rows in a 2 GB container | completes | completes | killed | killed |
+
+**Outcome — extraction.** Both engines benefit from the extra shards, and SoftClient4ES benefits
+more: 25% faster against Trino's 16%. The S1 ratio therefore **widens from 1.43× to 1.60×**, on a
+topology chosen to favour Trino and with Trino holding half again our CPU.
+
+**Outcome — client cost is a property of the protocol, not the topology.** Peak client memory moves
+by 2% on our side and 0.1% on Trino's; client CPU is flat to slightly lower for both. Sharding the
+index and adding Trino nodes does not change what the client pays, because the client is one
+process consuming one wire format however large the cluster is. The same holds for the
+constrained-container result: 10M rows still land as a DataFrame in 2 GB on one side and are still
+OOM-killed on the other.
+
+**Outcome — pushdown is architectural.** The `GROUP BY` still moves **0 bytes off the cluster
+against 1,419 MB**. Five shards and two extra Trino nodes do not change this, because the connector
+does not push aggregations down: it reads all 10 million rows whatever the topology, and merely
+reads them faster.
+
+**Where Trino gains most.** Its aggregation wall-clock improves **4.7×** (27.0 s → 5.8 s), by far
+the largest single improvement measured in this benchmark for either engine. Scan parallelism is
+exactly what a multi-shard index gives Trino, and on aggregate-heavy work it converts directly into
+wall-clock.
+
+*ES wire in this section is measured at the Elasticsearch container itself — bytes that left the
+cluster — so the figure does not depend on how many containers the engine is made of.*
+
+## 7. Where Trino is stronger
 
 A fair benchmark names the other system's strengths.
 
+- **Aggregation over a sharded index** — given shards to parallelise over, Trino's `GROUP BY`
+  wall-clock improves 4.7x (27.0 s to 5.8 s on a 5-shard index), the largest single gain either
+  engine showed in this benchmark. It still moves 1.4 GB off the cluster to get there.
 - **Cross-index joins** — Trino is marginally faster on wall clock (J0–J2), and more efficient at
   aggregating over a join.
 - **A lower-memory Arrow client exists** — via connectorx, Trino can land an Arrow *table* in less
@@ -323,7 +383,7 @@ A fair benchmark names the other system's strengths.
 - **Licensing** — Trino is Apache-2.0 throughout; SoftClient4ES gates result-set size by licence
   tier (see Reproduction).
 
-## 7. Reproduction
+## 8. Reproduction
 
 Prerequisites: Docker, Python 3.12. Bring up the stack (`docker compose up -d`), then run the
 scenarios from `runners/`. Full instructions are in [README.md](README.md); fairness rules and

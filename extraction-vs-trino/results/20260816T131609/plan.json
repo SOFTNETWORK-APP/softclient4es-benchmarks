@@ -1,0 +1,24 @@
+{
+  "warmups": 2,
+  "runs": 5,
+  "index": "bench_events_10m_s5",
+  "variant": "5shard-wire",
+  "plan": [
+    [
+      "S1",
+      "flight"
+    ],
+    [
+      "S1",
+      "trino"
+    ],
+    [
+      "S3",
+      "flight"
+    ],
+    [
+      "S3",
+      "trino"
+    ]
+  ]
+}

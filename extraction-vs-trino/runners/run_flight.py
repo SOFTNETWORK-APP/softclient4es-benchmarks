@@ -29,9 +29,9 @@ import time
 
 import adbc_driver_flightsql.dbapi as dbapi
 
-from scenarios import (DEFAULT_INDEX, EXPECTED_MIN_COLS_FLIGHT_S1, EXPECTED_ROWS,
-                       SQL_AGG_DUCK, check, emit, guard_environment,
-                       memory_pressure, net_bytes, net_delta, peak_footprint_mb,
+from scenarios import (DEFAULT_INDEX, ENGINE_SERVICES, EXPECTED_MIN_COLS_FLIGHT_S1,
+                       EXPECTED_ROWS, SQL_AGG_DUCK, check, emit, guard_environment,
+                       memory_pressure, net_bytes, net_bytes_all, net_delta, peak_footprint_mb,
                        peak_rss_mb, sql_for)
 
 # IP literal, NOT "localhost" (fix for arrow#151). The ADBC Flight SQL driver is
@@ -135,9 +135,16 @@ if __name__ == "__main__":
     if a.frame == "polars" and a.dtype_backend != "default":
         raise SystemExit("--dtype-backend is a pandas concept; do not combine with --frame polars")
 
-    before = net_bytes("flight-sql")
+    before = net_bytes_all(ENGINE_SERVICES["flight"])
+    # Bytes that actually LEFT Elasticsearch. Summing the engine stack instead
+    # double-counts internal traffic once the engine is a cluster: measured
+    # 2026-08-16, engine-stack rx for S1 was 3,671 MB against ~2,950 MB truly
+    # read from ES, the difference being the worker->coordinator exchange.
+    # Sampled at the source, the number is independent of engine topology.
+    before_es = net_bytes("elasticsearch")
     result = run(a.scenario, a.index, a.dtype_backend, a.frame)
-    result["net"] = net_delta(before, net_bytes("flight-sql"))
+    result["net"] = net_delta(before, net_bytes_all(ENGINE_SERVICES["flight"]))
+    result["net_es"] = net_delta(before_es, net_bytes("elasticsearch"))
     emit({"stack": "flight", "scenario": a.scenario, "index": a.index,
           "variant": a.variant,
           "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),

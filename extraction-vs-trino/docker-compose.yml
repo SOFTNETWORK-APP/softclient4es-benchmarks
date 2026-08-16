@@ -159,20 +159,48 @@ services:
     # but only when ARROW_MAX_MEMORY gives the root allocator a real limit -- deliberately
     # left unset here, see below.
 
+  # ── Trino: a real 3-node cluster (1 coordinator + 2 workers) ────────────────
+  #
+  # The published single-shard figures were taken against ONE Trino container
+  # (4 CPU / 4 GB, coordinator and worker in the same JVM). That configuration
+  # answers "who runs Trino on a single node?" with "nobody", so the multi-shard
+  # sensitivity run uses a dedicated coordinator plus two workers -- the shape a
+  # small production cluster actually has.
+  #
+  # RESOURCES, and they are NOT at parity -- state this wherever the figures appear:
+  #   Trino  6 CPU / 8 GB total   (coordinator 2/2, workers 2/3 each)
+  #   sidecar 4 CPU / 4 GB
+  # Trino deliberately gets 1.5x the CPU and 2x the memory. A wall-clock gain is
+  # therefore not attributable to split parallelism alone, and we say so rather
+  # than let a reader assume parity.
+  #
+  # ⚠️ ES 4 + Trino 6 = 10 of the VM's 10 vCPUs, where the sidecar leaves 2 spare.
+  # That asymmetry runs AGAINST Trino. Check `docker stats` for throttling on a
+  # pilot run before measuring; if it appears, drop the coordinator to 1 CPU.
+  #
+  # `trino` stays the coordinator's service name so the client endpoint, the README
+  # commands and orchestrate.py's ENGINE_OF entry keep working. It depends_on the
+  # workers purely so `docker compose up -d trino` still brings the whole cluster up;
+  # workers retry discovery until the coordinator answers, so start order is free.
   trino:
     image: trinodb/trino:483
     depends_on:
       elasticsearch:
         condition: service_healthy
+      trino-worker-1:
+        condition: service_started
+      trino-worker-2:
+        condition: service_started
     volumes:
       - ./trino/catalog:/etc/trino/catalog:ro
+      - ./trino/coordinator/config.properties:/etc/trino/config.properties:ro
     ports: ["8080:8080"]
-    mem_limit: 4g
-    cpus: 4
-    # Trino keeps its image-default heap policy (Initial/MaxRAMPercentage=80, so ~3.2 GB
-    # of this 4 GB container) -- MORE heap than either other engine gets. That asymmetry
-    # runs in Trino's favour and is deliberately left in place; RESULTS section 1 records
-    # the computed value.
+    mem_limit: 2g
+    cpus: 2
+    # Trino keeps its image-default heap policy (Initial/MaxRAMPercentage=80) on every
+    # node -- MORE heap per node than either other engine gets. That asymmetry runs in
+    # Trino's favour and is deliberately left in place; RESULTS records the computed
+    # value.
     #
     # NO healthcheck override. The official image ships its own:
     #   HEALTHCHECK --interval=10s --timeout=5s --start-period=10s \
@@ -181,6 +209,24 @@ services:
     # may lack curl, so do NOT replace it with a curl probe. Watch readiness with
     # `docker compose ps` (healthy), or from the HOST:
     #   curl -sf http://localhost:8080/v1/info   -> "starting":false
+    #
+    # A HEALTHY COORDINATOR IS NOT A READY CLUSTER. It answers before the workers
+    # have registered, and a query issued in that window runs on fewer nodes than
+    # the run claims. orchestrate.py polls /v1/node for the expected worker count.
+
+  trino-worker-1: &trino-worker
+    image: trinodb/trino:483
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    volumes:
+      - ./trino/catalog:/etc/trino/catalog:ro
+      - ./trino/worker/config.properties:/etc/trino/config.properties:ro
+    mem_limit: 3g
+    cpus: 2
+
+  trino-worker-2:
+    <<: *trino-worker
 
 # Persists the generated corpus across container recreation. Deliberate reset:
 #   docker compose down -v

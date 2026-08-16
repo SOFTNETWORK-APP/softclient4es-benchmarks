@@ -54,6 +54,8 @@ import sys
 HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parent
 RESULTS = ROOT / "results"
+from scenarios import DEFAULT_INDEX, ENGINE_SERVICES, wait_trino_cluster
+
 IMAGE = "sc4es-bench-client:latest"
 # Compose derives the network name from the project directory.
 NETWORK = "extraction-vs-trino_default"
@@ -61,8 +63,11 @@ NETWORK = "extraction-vs-trino_default"
 # and the run measures contention rather than the client's requirement.
 MAX_SAFE_CAP_GB = 8
 # Which engine to stop while the other is under test. Elasticsearch stays up for both.
-IDLE_ENGINE = {"flight": "trino", "trino": "flight-sql"}
-ENGINE_SERVICE = {"flight": "flight-sql", "trino": "trino"}
+# Trino is a 3-node cluster, so both sides of this are LISTS: stopping only the
+# coordinator would leave two idle JVMs holding CPU and RAM inside the shared VM
+# while the other engine is measured. Single source of truth in scenarios.py.
+IDLE_ENGINE = {"flight": ENGINE_SERVICES["trino"], "trino": ENGINE_SERVICES["flight"]}
+ENGINE_SERVICE = ENGINE_SERVICES
 
 
 def parse_cap_gb(cap):
@@ -81,16 +86,17 @@ def set_engines(active):
     about CPU: every GiB the idle engine holds is a GiB the capped client cannot
     have inside the shared VM."""
     idle = IDLE_ENGINE[active]
-    subprocess.run(["docker", "compose", "stop", idle],
+    subprocess.run(["docker", "compose", "stop", *idle],
                    cwd=str(ROOT), capture_output=True, timeout=180)
-    subprocess.run(["docker", "compose", "start", ENGINE_SERVICE[active]],
+    subprocess.run(["docker", "compose", "start", *ENGINE_SERVICE[active]],
                    cwd=str(ROOT), capture_output=True, timeout=180)
     import time as _t
     deadline = _t.time() + 300
     while _t.time() < deadline:
         r = subprocess.run(["docker", "compose", "ps", "--format", "json",
-                            ENGINE_SERVICE[active]],
+                            *ENGINE_SERVICE[active]],
                            cwd=str(ROOT), capture_output=True, text=True, timeout=60)
+        ready = set()
         for line in r.stdout.splitlines():
             line = line.strip()
             if not line.startswith("{"):
@@ -99,10 +105,18 @@ def set_engines(active):
                 row = json.loads(line)
             except json.JSONDecodeError:
                 continue
+            # A service with no healthcheck reports "" -- running is the best signal.
             if row.get("Health") in ("healthy", "") and row.get("State") == "running":
-                return
+                ready.add(row.get("Service") or row.get("Name"))
+        # EVERY service of the active stack must be up, not merely the first one to
+        # answer: a healthy Trino coordinator whose workers have not started would
+        # otherwise read as ready, and the run would measure a 1-node cluster.
+        if len(ready) >= len(ENGINE_SERVICE[active]):
+            if active == "trino":
+                wait_trino_cluster()
+            return
         _t.sleep(5)
-    sys.exit(f"{ENGINE_SERVICE[active]} did not become healthy -- aborting")
+    sys.exit(f"{ENGINE_SERVICE[active]} did not all become healthy -- aborting")
 
 
 def build_image():
@@ -114,10 +128,11 @@ def build_image():
     print(f"[build] ok {r.stdout.strip()[:20]}", flush=True)
 
 
-def one(engine, mode, cap, chunksize, timeout=3600):
+def one(engine, mode, cap, chunksize, index, timeout=3600):
     """One capped run. Returns (parsed_json_or_None, exit_code)."""
     cmd = ["docker", "run", "--rm", "--network", NETWORK,
            "--memory", cap, "--memory-swap", cap,
+           "-e", f"BENCH_INDEX={index}",
            IMAGE, "--engine", engine, "--mode", mode, "--cap-label", cap]
     if mode == "chunked":
         cmd += ["--chunksize", str(chunksize)]
@@ -163,6 +178,11 @@ def main():
     p.add_argument("--modes", nargs="+", default=["full", "chunked"],
                    choices=["full", "chunked", "full-cx"])
     p.add_argument("--chunksize", type=int, default=100_000)
+    p.add_argument("--index", default=DEFAULT_INDEX,
+                   help=f"index under test (default {DEFAULT_INDEX}). The multi-shard "
+                        "sensitivity topology lives in its own index, so this MUST be "
+                        "passed for that campaign -- otherwise the capped run silently "
+                        "measures the 1-shard index while the label says 5 shards.")
     p.add_argument("--session")
     p.add_argument("--skip-build", action="store_true")
     a = p.parse_args()
@@ -203,6 +223,13 @@ def main():
         except Exception as e:
             (session / name).write_text(f"capture failed: {e}\n")
 
+    # Provenance: which index -- and therefore which shard topology -- this session
+    # measured. A capped result labelled "5 shards" that silently ran against the
+    # 1-shard index would be indistinguishable from a real one.
+    (session / "topology.txt").write_text(
+        "index={}\ncaps={}\nengines={}\n".format(
+            a.index, " ".join(a.caps), " ".join(a.engines)))
+
     results = []
     for mode in a.modes:
         for cap in a.caps:
@@ -210,7 +237,7 @@ def main():
                 label = f"[{engine} {mode} cap={cap}]"
                 set_engines(engine)
                 print(f"{label} running", flush=True)
-                payload, code = one(engine, mode, cap, a.chunksize)
+                payload, code = one(engine, mode, cap, a.chunksize, a.index)
                 v = verdict(payload, code)
                 rec = {"engine": engine, "mode": mode, "cap": cap,
                        "verdict": v, "exit_code": code, "payload": payload}

@@ -1,0 +1,312 @@
+/* ─── Brand type: Inter Variable (same face as softclient4es.dev) ─────────── */
+@font-face {
+  font-family: 'Inter Variable';
+  font-style: normal;
+  font-display: block;
+  font-weight: 100 900;
+  src: url('assets/inter-latin-wght-normal.woff2') format('woff2-variations');
+}
+@font-face {
+  font-family: 'Inter Variable';
+  font-style: italic;
+  font-display: block;
+  font-weight: 100 900;
+  src: url('assets/inter-latin-wght-italic.woff2') format('woff2-variations');
+}
+
+/* ─── Design tokens: lifted from softclient4es.dev src/styles/global.css ──── */
+:root {
+  --sc-blue:        #1e40af;
+  --sc-blue-light:  #3b82f6;
+  --sc-blue-dark:   #1e3a8a;
+  --sc-green:       #059669;
+  --sc-orange:      #ea580c;
+  --sc-gray-50:     #f8fafc;
+  --sc-gray-100:    #f1f5f9;
+  --sc-gray-800:    #1e293b;
+  --sc-gray-900:    #0f172a;
+  --sc-teal:        #0f766e;   /* site docs accent */
+
+  /* report-local derivations */
+  --ink:      var(--sc-gray-900);
+  --ink-2:    #334155;
+  --muted:    #64748b;
+  --border:   #e2e8f0;
+  --border-2: #cbd5e1;
+  --surface:  #ffffff;
+  --surface-2: var(--sc-gray-50);
+
+  /* chart marks — validated categorical pair (see report README) */
+  --mark-sc:    #2563eb;
+  --mark-trino: #ea580c;
+
+  --font-sans: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: 'SF Mono', 'Menlo', 'Consolas', ui-monospace, monospace;
+}
+
+/* ─── Page geometry ──────────────────────────────────────────────────────────
+   The page box (A4) and its margins are set by build.mjs through the DevTools
+   print API, because Chrome ignores `@page :first` there: the cover is printed
+   in its own pass with zero margins (full bleed, no running header/footer) and
+   the body in a second pass that carries them. ──────────────────────────────── */
+
+* { box-sizing: border-box; }
+
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  -webkit-font-smoothing: antialiased;
+  color: var(--ink);
+  font-size: 9.6pt;
+  line-height: 1.55;
+  background: var(--surface);
+}
+
+.pad { padding: 0 18mm; }
+
+/* ─── Cover ──────────────────────────────────────────────────────────────── */
+.cover {
+  width: 210mm;
+  height: 296.8mm;                    /* a hair under A4 so it cannot spill a 2nd page */
+  padding: 26mm 20mm 20mm;
+  background:
+    radial-gradient(120% 80% at 85% 8%, rgba(59,130,246,.34) 0%, rgba(59,130,246,0) 55%),
+    linear-gradient(158deg, var(--sc-gray-900) 0%, var(--sc-blue-dark) 62%, #1e40af 100%);
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  break-after: page;
+  position: relative;
+  overflow: hidden;
+}
+.cover::after {           /* subtle Arrow-batch motif, kept quiet */
+  content: "";
+  position: absolute;
+  right: -40mm; bottom: -46mm;
+  width: 150mm; height: 150mm;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,.13);
+  box-shadow: 0 0 0 22mm rgba(255,255,255,.035), inset 0 0 0 18mm rgba(255,255,255,.03);
+}
+.cover-logo { display: flex; align-items: center; gap: 12px; }
+.cover-logo img { height: 15mm; width: auto; }
+.cover-logo .wordmark {
+  font-size: 15pt; font-weight: 700; letter-spacing: -.015em; color: #fff;
+}
+.cover-logo .wordmark span { color: #93c5fd; font-weight: 500; }
+
+/* Sits in the upper third, under the logo — NOT margin-top:auto, which pushed the
+   whole title block onto the foot of the page. The footer pins itself separately. */
+.cover-body { margin-top: 30mm; }
+.cover-eyebrow {
+  font-size: 8.5pt; font-weight: 600; letter-spacing: .16em; text-transform: uppercase;
+  color: #93c5fd; margin-bottom: 7mm;
+}
+.cover h1 {
+  margin: 0;
+  font-size: 33pt; line-height: 1.1; font-weight: 700; letter-spacing: -.028em;
+}
+.cover h1 em {
+  font-style: normal; font-weight: 300; color: #bfdbfe; padding: 0 .12em;
+}
+.cover .deck {
+  margin: 6mm 0 0; max-width: 132mm;
+  font-size: 12.5pt; line-height: 1.5; font-weight: 300; color: #dbeafe;
+}
+.cover-rule { height: 3px; width: 34mm; background: linear-gradient(90deg,#60a5fa,#34d399); margin: 9mm 0 8mm; border-radius: 2px; }
+
+.cover-facts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6mm; max-width: 165mm; }
+.cover-facts dt { font-size: 7.6pt; letter-spacing: .08em; text-transform: uppercase; color: #93c5fd; font-weight: 600; }
+.cover-facts dd { margin: 3px 0 0; font-size: 10.5pt; font-weight: 600; color: #fff; }
+.cover-facts dd small { display: block; font-size: 7.8pt; font-weight: 400; color: #bfdbfe; }
+
+.cover-foot {
+  margin-top: auto;                 /* pinned to the bottom, independent of the title block */
+  padding-top: 5mm;
+  border-top: 1px solid rgba(255,255,255,.18);
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 8.6pt; color: #bfdbfe;
+}
+.cover-foot strong { color: #fff; font-weight: 600; }
+
+/* ─── Typography ─────────────────────────────────────────────────────────── */
+h2 {
+  font-size: 15pt; font-weight: 700; letter-spacing: -.02em; color: var(--sc-blue-dark);
+  margin: 0 0 4mm; padding-bottom: 2.5mm;
+  border-bottom: 2px solid var(--sc-blue);
+  break-after: avoid;
+}
+h2 .n {
+  display: inline-block; min-width: 8mm;
+  color: var(--sc-blue-light); font-weight: 700;
+}
+h3 {
+  font-size: 11pt; font-weight: 650; letter-spacing: -.012em; color: var(--sc-gray-800);
+  margin: 7mm 0 2.5mm; break-after: avoid;
+}
+h3 .tag {
+  display: inline-block; margin-right: 7px; padding: 1.5px 7px;
+  background: var(--sc-blue); color: #fff; border-radius: 5px;
+  font-size: 8.5pt; font-weight: 700; letter-spacing: .02em; vertical-align: 1px;
+}
+h4 { font-size: 9.6pt; font-weight: 650; margin: 5mm 0 1.5mm; color: var(--sc-gray-800); break-after: avoid; }
+p { margin: 0 0 3mm; }
+a { color: var(--sc-blue); text-decoration: none; }
+strong { font-weight: 650; }
+code {
+  font-family: var(--font-mono); font-size: .88em;
+  background: var(--sc-gray-100); color: var(--sc-blue-dark);
+  padding: .5px 3px; border-radius: 3px;
+}
+ul { margin: 0 0 3mm; padding-left: 5mm; }
+li { margin-bottom: 1.6mm; }
+li::marker { color: var(--sc-blue-light); }
+
+section { break-inside: auto; }
+.page-break { break-before: page; }
+
+/* ─── Lede & summary ─────────────────────────────────────────────────────── */
+.lede { font-size: 11pt; line-height: 1.55; color: var(--ink-2); font-weight: 300; }
+.lede strong { font-weight: 600; color: var(--ink); }
+
+.audience {
+  border-left: 3px solid var(--sc-teal);
+  background: #f0fdfa;
+  padding: 3.5mm 5mm; margin: 5mm 0; border-radius: 0 8px 8px 0;
+  font-size: 9.2pt; break-inside: avoid;
+}
+.audience b { color: #115e59; }
+
+/* ─── Hero stat tiles ────────────────────────────────────────────────────── */
+.tiles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4mm; margin: 5mm 0 4mm; break-inside: avoid; }
+.tile {
+  border: 1px solid var(--border); border-radius: 10px; padding: 4mm 4.5mm;
+  background: linear-gradient(180deg, #fff 0%, var(--surface-2) 100%);
+  break-inside: avoid;
+}
+.tile .k { font-size: 7.6pt; font-weight: 650; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); }
+.tile .v { font-size: 20pt; font-weight: 700; letter-spacing: -.03em; color: var(--sc-blue-dark); margin: 1.5mm 0 1mm; line-height: 1; }
+.tile .v .vs { font-size: 11pt; font-weight: 400; color: var(--muted); letter-spacing: 0; }
+.tile .d { font-size: 8.6pt; color: var(--ink-2); line-height: 1.45; }
+.tile.accent { border-color: #bfdbfe; background: linear-gradient(180deg,#fff 0%, #eff6ff 100%); }
+
+/* ─── Tables ─────────────────────────────────────────────────────────────── */
+table {
+  width: 100%; border-collapse: collapse; margin: 3mm 0 4mm;
+  font-size: 9pt; break-inside: avoid;
+}
+thead th {
+  text-align: left; font-size: 7.8pt; font-weight: 650; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--muted);
+  padding: 2mm 2.5mm; border-bottom: 1.5px solid var(--sc-blue);
+  vertical-align: bottom;
+}
+tbody td { padding: 1.9mm 2.5mm; border-bottom: 1px solid var(--border); vertical-align: top; }
+tbody tr:nth-child(even) td { background: #fbfcfe; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.win { background: #eff6ff !important; color: var(--sc-blue-dark); font-weight: 650; }
+td.first { font-weight: 550; color: var(--sc-gray-800); }
+table.compact { font-size: 8.6pt; }
+caption {
+  caption-side: top; text-align: left; font-size: 8.2pt; color: var(--muted);
+  padding-bottom: 1.5mm;
+}
+
+.chip { display: inline-block; padding: .5px 6px; border-radius: 20px; font-size: 8pt; font-weight: 650; white-space: nowrap; }
+.chip.ok { background: #ecfdf5; color: #047857; }
+.chip.no { background: #fef2f2; color: #b91c1c; }
+.chip.par { background: var(--sc-gray-100); color: var(--sc-gray-800); }
+
+/* ─── Code ───────────────────────────────────────────────────────────────── */
+pre {
+  font-family: var(--font-mono); font-size: 8.1pt; line-height: 1.5;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-left: 3px solid var(--sc-blue-light);
+  border-radius: 0 8px 8px 0; padding: 3mm 4mm; margin: 3mm 0 4mm;
+  overflow: hidden; white-space: pre-wrap; break-inside: avoid;
+  color: var(--sc-gray-800);
+}
+pre .c { color: var(--muted); }
+pre .kw { color: var(--sc-blue); font-weight: 600; }
+
+/* ─── Outcome / note blocks ──────────────────────────────────────────────── */
+.outcome {
+  border-left: 3px solid var(--sc-green); background: #f0fdf4;
+  padding: 3mm 4.5mm; margin: 3mm 0 4mm; border-radius: 0 8px 8px 0;
+  font-size: 9.2pt; break-inside: avoid;
+}
+.outcome b { color: #065f46; }
+.note {
+  border-left: 3px solid var(--border-2); background: var(--surface-2);
+  padding: 3mm 4.5mm; margin: 3mm 0 4mm; border-radius: 0 8px 8px 0;
+  font-size: 9pt; color: var(--ink-2); break-inside: avoid;
+}
+.counter {
+  border: 1px solid #fed7aa; background: #fff7ed;
+  padding: 4mm 5mm; margin: 4mm 0; border-radius: 10px; break-inside: avoid;
+}
+.counter h4 { margin-top: 0; color: #9a3412; }
+.counter li::marker { color: var(--sc-orange); }
+
+/* ─── Figures / charts ───────────────────────────────────────────────────── */
+figure { margin: 4mm 0 5mm; break-inside: avoid; }
+figcaption {
+  font-size: 8.4pt; color: var(--muted); margin-top: 2.5mm;
+}
+figcaption b { color: var(--ink-2); font-weight: 600; }
+.fig-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 3mm; }
+.fig-title { font-size: 9.6pt; font-weight: 650; color: var(--sc-gray-800); }
+.legend { display: flex; gap: 5mm; font-size: 8.2pt; color: var(--ink-2); }
+.legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2.5px; margin-right: 4px; vertical-align: -.5px; }
+.sw-sc { background: var(--mark-sc); }
+.sw-tr { background: var(--mark-trino); }
+
+.panels { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6mm; }
+.panel { break-inside: avoid; }
+.panel-title { font-size: 8.4pt; font-weight: 650; color: var(--sc-gray-800); }
+.panel-unit { font-size: 7.6pt; color: var(--muted); margin-bottom: 2.5mm; }
+
+.row { margin-bottom: 2.2mm; }
+.row-label { display: block; font-size: 7.8pt; color: var(--muted); margin-bottom: 1px; }
+.track { display: flex; align-items: center; }
+.bar { height: 11px; border-radius: 0 3px 3px 0; flex-shrink: 0; }
+.bar-sc { background: var(--mark-sc); }
+.bar-tr { background: var(--mark-trino); }
+.val { margin-left: 6px; font-size: 8.2pt; font-weight: 650; color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.val.q { font-weight: 400; color: var(--muted); }
+
+.duo { display: grid; grid-template-columns: 1fr 1fr; gap: 8mm; }
+.rowwide .row-label { display: inline-block; width: 34mm; font-size: 8pt; color: var(--ink-2); }
+.rowwide { display: flex; align-items: center; margin-bottom: 2.4mm; }
+.rowwide .track { flex: 1; }
+
+.axis-note { font-size: 7.6pt; color: var(--muted); margin-top: 1mm; }
+
+/* ─── Where the competitor is stronger ───────────────────────────────────── */
+.stronger li { margin-bottom: 2.2mm; }
+.stronger li::marker { color: var(--sc-orange); }
+
+/* ─── Appendix ───────────────────────────────────────────────────────────── */
+.appendix h2 { border-bottom-color: var(--sc-teal); color: #115e59; }
+.appendix h2 .n { color: #14b8a6; }
+.appendix h3 .tag { background: var(--sc-teal); }
+
+/* The appendices are dense reference prose, so they carry a slightly tighter rhythm
+   than the body. This also buys back the ~2 lines that were spilling the closing
+   strip onto a near-empty final page. */
+.appendix h3 { margin-top: 5mm; }
+.appendix p  { margin-bottom: 2.4mm; }
+.appendix li { margin-bottom: 1.1mm; }
+
+.small { font-size: 8.6pt; color: var(--muted); }
+/* Must never start a page on its own: alone it renders as a blank sheet carrying only
+   the running header and footer. Kept with the text above it, and slim enough to fit. */
+.endmark {
+  margin-top: 5mm; padding-top: 2.5mm; border-top: 1px solid var(--border);
+  font-size: 8.2pt; color: var(--muted);
+  display: flex; justify-content: space-between;
+  break-before: avoid; break-inside: avoid;
+}

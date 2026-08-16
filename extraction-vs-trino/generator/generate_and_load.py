@@ -6,9 +6,22 @@ the data path. Fixed seed => byte-identical dataset on every regeneration.
 
     python generator/generate_and_load.py              # the real 10,000,000-doc load
     python generator/generate_and_load.py --total 100000   # smoke load, NOT publishable
+    python generator/generate_and_load.py --shards 5 --index bench_events_10m_s5
 
 A smoke load is safe: every runner independently asserts its exact expected row
 count, so a short index aborts the run instead of producing a quietly wrong number.
+
+SHARD COUNT IS A BENCHMARK VARIABLE, not a tuning knob. Trino's Elasticsearch
+connector creates one split per shard, so the shard count -- not the number of
+Trino nodes -- bounds its scan parallelism. The loader prints, and re-reads from
+Elasticsearch, the shard count it actually produced: a published result must be
+attributable to a topology.
+
+The topologies live in SEPARATE INDICES so neither has to be rebuilt to go back to
+the other (`--index`; every runner already takes the same flag). ⚠️ Two resident
+10M indices share one 4 GB Elasticsearch container's page cache, which is NOT the
+condition the single-shard figures were measured under. Close the idle one before
+measuring -- `generator/select_topology.py` does exactly that.
 """
 import argparse
 import json
@@ -34,8 +47,10 @@ COUNTRIES = ["US", "FR", "DE", "GB", "ES", "IT", "NL", "BE", "SE", "NO",
 CATEGORIES = [f"cat_{i:03d}" for i in range(100)]   # S3 GROUP BY key -> 100 groups
 EPOCH_2026 = 1_767_225_600_000                       # 2026-01-01T00:00:00Z, epoch millis
 
+SHARDS = 1
+
 MAPPING = {
-    "settings": {"number_of_shards": 1, "number_of_replicas": 0,
+    "settings": {"number_of_shards": SHARDS, "number_of_replicas": 0,
                  "refresh_interval": "-1"},
     "mappings": {"properties": {
         "id":       {"type": "long"},
@@ -81,20 +96,34 @@ def bulk(body, attempts=5):
 
 
 def main():
+    global INDEX                    # must precede any read of INDEX in this scope
     p = argparse.ArgumentParser()
     p.add_argument("--total", type=int, default=TOTAL,
                    help=f"documents to load (default {TOTAL:,})")
-    total = p.parse_args().total
+    p.add_argument("--shards", type=int, default=SHARDS,
+                   help=f"primary shards (default {SHARDS}; the multi-shard "
+                        "sensitivity topology is 5)")
+    p.add_argument("--index", default=INDEX,
+                   help=f"index to build (default {INDEX}); use a distinct name "
+                        "per topology, e.g. bench_events_10m_s5")
+    a = p.parse_args()
+    total, shards = a.total, a.shards
+    INDEX = a.index
     if total != TOTAL:
         print(f"WARNING: loading {total:,} docs, not the benchmark's {TOTAL:,}. "
               "Runner asserts will fail on S1/S2 -- smoke use only, never publish.",
               file=sys.stderr)
+    if shards < 1:
+        sys.exit("--shards must be >= 1")
+
+    mapping = json.loads(json.dumps(MAPPING))          # never mutate the module default
+    mapping["settings"]["number_of_shards"] = shards
 
     try:
         req("DELETE", f"/{INDEX}")
     except Exception:
         pass
-    req("PUT", f"/{INDEX}", json.dumps(MAPPING))
+    req("PUT", f"/{INDEX}", json.dumps(mapping))
 
     rng = random.Random(SEED)
     action = json.dumps({"index": {}})
@@ -129,13 +158,30 @@ def main():
             sys.exit(1)
 
     req("POST", f"/{INDEX}/_refresh")
-    # One segment => stable, comparable read performance for BOTH stacks.
+    # One segment PER SHARD => stable, comparable read performance for BOTH stacks.
     req("POST", f"/{INDEX}/_forcemerge?max_num_segments=1")
     req("PUT", f"/{INDEX}/_settings",
         json.dumps({"index": {"refresh_interval": "1s"}}))
     count = req("GET", f"/{INDEX}/_count")["count"]
     assert count == total, f"expected {total} docs, got {count}"
-    print(f"Loaded {count:,} docs in {time.time() - t0:,.0f}s")
+
+    # Re-read the topology from Elasticsearch rather than trusting the request:
+    # the shard count is what a published result is attributed to.
+    actual = int(req("GET", f"/{INDEX}/_settings")[INDEX]
+                 ["settings"]["index"]["number_of_shards"])
+    assert actual == shards, f"asked for {shards} shards, index reports {actual}"
+    print(f"Loaded {count:,} docs into {INDEX} / {actual} shard(s) "
+          f"in {time.time() - t0:,.0f}s")
+
+    others = [n for n in req("GET", "/_cat/indices/bench_events_10m*?format=json")
+              if n["index"] != INDEX and n["status"] == "open"]
+    if others:
+        print(f"\n⚠️  {len(others)} other 10M index/indices are OPEN: "
+              f"{', '.join(sorted(i['index'] for i in others))}.\n"
+              f"    They share this cluster's page cache, which is NOT the condition\n"
+              f"    the published figures were measured under. Before measuring:\n"
+              f"        python generator/select_topology.py --index {INDEX}",
+              file=sys.stderr)
 
 
 if __name__ == "__main__":

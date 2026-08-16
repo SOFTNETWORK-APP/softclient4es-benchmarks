@@ -15,9 +15,10 @@ import time
 
 from trino.dbapi import connect
 
-from scenarios import (DEFAULT_INDEX, EXPECTED_COLS_TRINO_S1, SQL_AGG_DUCK, check,
-                       emit, guard_environment, memory_pressure, net_bytes,
-                       net_delta, peak_footprint_mb, peak_rss_mb, sql_for)
+from scenarios import (DEFAULT_INDEX, ENGINE_SERVICES, EXPECTED_COLS_TRINO_S1,
+                       SQL_AGG_DUCK, check, emit, guard_environment, memory_pressure,
+                       net_bytes, net_bytes_all, net_delta, peak_footprint_mb, peak_rss_mb,
+                       sql_for)
 
 SCENARIOS = ["S1", "S1r", "S2", "S3", "S4"]
 
@@ -283,10 +284,17 @@ if __name__ == "__main__":
     if a.route != "stock" and a.scenario != "S1":
         raise SystemExit("--route only applies to S1")
 
-    before = net_bytes("trino")
+    before = net_bytes_all(ENGINE_SERVICES["trino"])
+    # Bytes that actually LEFT Elasticsearch. Summing the engine stack instead
+    # double-counts internal traffic once the engine is a cluster: measured
+    # 2026-08-16, engine-stack rx for S1 was 3,671 MB against ~2,950 MB truly
+    # read from ES, the difference being the worker->coordinator exchange.
+    # Sampled at the source, the number is independent of engine topology.
+    before_es = net_bytes("elasticsearch")
     result = run(a.scenario, a.index, a.encoding, a.request_timeout, a.dtype_backend,
                  a.frame, a.route)
-    result["net"] = net_delta(before, net_bytes("trino"))
+    result["net"] = net_delta(before, net_bytes_all(ENGINE_SERVICES["trino"]))
+    result["net_es"] = net_delta(before_es, net_bytes("elasticsearch"))
     if a.encoding:
         result["encoding"] = a.encoding
     if a.request_timeout:
