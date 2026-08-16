@@ -27,8 +27,12 @@ VARIANCE_WARN = 0.25
 METRICS = [("wall_s", "wall-clock median (s)", 2),
            ("cpu_s", "client CPU median (s)", 2)]
 # The comparison each scenario's table is built around.
-BASELINE = {"S1": ("flight", "trino"), "S2": ("flight", "trino"),
+BASELINE = {"S1": ("flight", "trino"), "S1m": ("flight", "trino"),
+            "S2": ("flight", "trino"),
             "S3": ("flight", "trino"), "S4": ("flight", "trino")}
+# Scenarios ES|QL can enter at all. Everywhere else it is absent BY PRODUCT LIMIT
+# (1,000,000-row ceiling), which RESULTS states rather than leaving as a blank.
+ESQL_SCENARIOS = ("S1m", "S3", "S4")
 
 
 def median_of(runs, key):
@@ -90,9 +94,21 @@ def main():
                 f"({wall[0]:.2f}-{wall[-1]:.2f}s) -- the median understates the noise")
     for (scenario, variant), stacks in sorted(by_scenario.items()):
         missing = REQUIRED_STACKS.get(scenario, set()) - set(stacks)
-        assert not missing, (
-            f"{scenario}/{variant or 'base'}: missing stack(s) {sorted(missing)} -- "
-            "refusing to print one-sided medians")
+        if variant:
+            # Sensitivity arms are single-stack BY CONSTRUCTION -- a Trino-only
+            # client route, an ES|QL wire route, a Flight dial, a drift block --
+            # so requiring the full stack set here would make every variant
+            # unsummarizable. Report the absence; gate only the base variant,
+            # which is where the published headline lives.
+            if missing:
+                warnings.append(f"{scenario}/{variant}: variant arm covers only "
+                                f"{sorted(stacks)} (absent: {sorted(missing)})")
+        else:
+            assert not missing, (
+                f"{scenario}/base: missing stack(s) {sorted(missing)} -- "
+                "refusing to print one-sided medians")
+        # Row-count equality is a gate everywhere: two stacks that answered
+        # differently are not comparable, variant or not.
         assert len(set(stacks.values())) == 1, (
             f"{scenario}/{variant or 'base'}: row-count mismatch across stacks {stacks}")
 
@@ -117,16 +133,32 @@ def main():
               f"| {mem:,.0f} ({mem_label}) "
               f"| {runs[0]['rows']:,} |")
 
-    # ---- the S0 floor ------------------------------------------------------
+    # ---- the floors --------------------------------------------------------
     s0 = groups.get(("S0", "es-raw", ""))
-    if s0:
-        print(f"\n### S0 -- the floor both stacks pay\n")
-        mem, mem_label = median_mem(s0)
-        print(f"Raw Elasticsearch scroll of the same 8 fields, parsed and discarded: "
-              f"**{median_of(s0, 'wall_s'):,.2f} s** wall, "
-              f"{median_of(s0, 'cpu_s'):,.2f} s client CPU, "
-              f"{mem:,.0f} MB peak client memory ({mem_label}) "
-              f"({len(s0)} runs). Every S1 number below sits on top of this.")
+    s0p = groups.get(("S0p", "es-raw", ""))
+    if s0 or s0p:
+        print(f"\n### S0 / S0p -- the floors both stacks pay\n")
+        print("| Floor | Wall median (s) | Client CPU median (s) | Peak client memory (MB) | Runs |")
+        print("|---|---|---|---|---|")
+        for label, runs in (("S0 single-process scroll", s0),
+                            ("S0p sliced scroll (parallel)", s0p)):
+            if not runs:
+                continue
+            mem, mem_label = median_mem(runs)
+            slices = runs[0].get("slices", 1)
+            print(f"| {label}"
+                  + (f", {slices} slices" if slices and slices > 1 else "")
+                  + f" | {median_of(runs, 'wall_s'):,.2f} "
+                    f"| {median_of(runs, 'cpu_s'):,.2f} "
+                    f"| {mem:,.0f} ({mem_label}) | {len(runs)} |")
+        if s0 and s0p:
+            # The sliced floor buys wall clock by spending CPU across processes.
+            # Both halves are published; a floor quoted on wall alone would be the
+            # same selective reading this benchmark refuses elsewhere.
+            print(f"\n<!-- S0p is {median_of(s0, 'wall_s') / median_of(s0p, 'wall_s'):,.2f}x "
+                  f"S0's wall clock for "
+                  f"{median_of(s0p, 'cpu_s') / median_of(s0, 'cpu_s'):,.2f}x its client CPU, "
+                  f"across {s0p[0].get('slices')} processes. -->")
 
     # ---- per-scenario comparison blocks, RESULTS section 2 shape -----------
     for (scenario, variant) in sorted(by_scenario):
@@ -192,6 +224,73 @@ def main():
               f"sides build Python rows (attributable to the wire and the server "
               f"side), and {b - a:,.2f}s is the cost of building row objects at all "
               f"(attributable to the columnar client representation). -->")
+
+    # ---- ES|QL, the third stack --------------------------------------------
+    # Published where it can run, absent where the product forbids it -- and the
+    # absence is stated, because a blank cell reads as "not tested" when it is in
+    # fact a 1,000,000-row ceiling.
+    esql_rows_out = []
+    for scenario in ESQL_SCENARIOS:
+        for variant in ("", "arrow"):
+            runs = groups.get((scenario, "esql", variant))
+            if not runs:
+                continue
+            mem, mem_label = median_mem(runs)
+            esql_rows_out.append(
+                (scenario, variant or "json", median_of(runs, "wall_s"),
+                 median_of(runs, "cpu_s"), mem, mem_label, runs[0]["rows"], len(runs)))
+    if esql_rows_out:
+        print("\n### ES|QL -- Elasticsearch's own query language\n")
+        print("| Scenario | Wire | Wall median (s) | Client CPU median (s) "
+              "| Peak client memory (MB) | Rows | Runs |")
+        print("|---|---|---|---|---|---|---|")
+        for sc, wire, wall, cpu, mem, lbl, rows, n in esql_rows_out:
+            print(f"| {sc} | {wire} | {wall:,.3f} | {cpu:,.3f} | {mem:,.0f} ({lbl}) "
+                  f"| {rows:,} | {n} |")
+        cap = next((r.get("esql_result_truncation_max_size")
+                    for k, rs in groups.items() if k[1] == "esql" for r in rs), None)
+        print(f"\n<!-- ES|QL ran with esql.query.result_truncation_max_size={cap}; "
+              "its product maximum is 1,000,000, which is why S1/S2/S5/S6 have no "
+              "ES|QL column. -->")
+
+    # ---- drift control: the same block, re-run at the end of the session ----
+    for (scenario, stack, variant), runs in sorted(groups.items()):
+        if not variant.endswith("drift"):
+            continue
+        base = groups.get((scenario, stack, variant[:-len("-drift")].rstrip("-")))
+        if not base:
+            continue
+        a_med, b_med = median_of(base, "wall_s"), median_of(runs, "wall_s")
+        a_sorted = sorted(r["wall_s"] for r in base)
+        spread = (a_sorted[-1] - a_sorted[0]) / a_med if a_med else 0
+        drift = (b_med - a_med) / a_med if a_med else 0
+        verdict = ("inside" if abs(drift) <= spread else "OUTSIDE")
+        print(f"\n### Drift control -- {scenario}/{stack}\n")
+        print(f"| Block | Wall median (s) | Runs |")
+        print(f"|---|---|---|")
+        print(f"| first (A) | {a_med:,.2f} | {len(base)} |")
+        print(f"| repeat at session end (A') | {b_med:,.2f} | {len(runs)} |")
+        print(f"\nSession drift {drift:+.1%}, {verdict} A's own run-to-run spread "
+              f"of {spread:.1%}." + ("" if verdict == "inside" else
+              " The blocks are NOT interchangeable: this session's cross-stack "
+              "comparison carries a drift larger than its noise and must say so."))
+
+    # ---- host load: bounding the "one machine" confound ---------------------
+    loads = [r["host_load_after"]["loadavg_1m"]
+             for rs in groups.values() for r in rs
+             if isinstance(r.get("host_load_after"), dict)
+             and r["host_load_after"].get("loadavg_1m") is not None]
+    cpus = next((r["host_load_after"].get("logical_cpus")
+                 for rs in groups.values() for r in rs
+                 if isinstance(r.get("host_load_after"), dict)), None)
+    if loads and cpus:
+        print("\n### Host load during the session\n")
+        print(f"1-minute load average sampled after every run: median "
+              f"{statistics.median(loads):,.1f}, max {max(loads):,.1f}, against "
+              f"{cpus} logical cores. The measured client runs on the host, so this "
+              f"is what bounds host contention as an explanation of the wall-clock "
+              f"figures: at the observed maximum, "
+              f"{max(0.0, cpus - max(loads)):,.1f} cores were not committed.")
 
     # ---- the disclosed Flight metadata-column leak, METHODOLOGY section 6 --
     if s1:

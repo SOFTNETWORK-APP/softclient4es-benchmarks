@@ -18,8 +18,10 @@ a 1-million-row index (`bench_1m`).
 
 | ID | What it measures | Why it exists |
 |---|---|---|
-| **S0** | A naïve Python scroll client reading 10M rows | Reference floor — the cost of the obvious approach |
+| **S0** | A single-process Python scroll client reading 10M rows | Reference floor — the cost of the simplest approach |
+| **S0p** | The same read as a **sliced** scroll, 5 slices in 5 processes | The honest floor: what Elasticsearch gives a client that parallelises |
 | **S1** | Extract 10M rows into a client-side columnar table | The core extraction comparison |
+| **S1m** | Extract **1,000,000** rows, all three stacks | The largest scale ES\|QL can enter, so the only one where all three compete |
 | **S1r** | Extract 10M rows into a pandas / polars DataFrame | The artifact a data scientist actually builds |
 | **S2** | Extract 10M rows and aggregate them in DuckDB | End-to-end "fetch and compute" |
 | **S3** | `GROUP BY` returning 100 rows | Aggregation pushdown — does the engine move the data or push the work down? |
@@ -30,6 +32,24 @@ a 1-million-row index (`bench_1m`).
 
 S1 and S1r additionally compare SoftClient4ES against Trino's fastest available clients
 (connectorx and the ADBC Trino driver), not only Trino's stock client — see RESULTS.
+
+### The third stack: ES|QL
+
+Elasticsearch's own query language is measured wherever it can run — **S1m, S3 and S4** — over both
+of its wire formats (`format=json` and Elasticsearch's native `format=arrow`). It is absent from
+S1, S2, S5 and S6 for a product reason, not an editorial one: `esql.query.result_truncation_max_size`
+is declared with a hard maximum of **1,000,000 rows**, and a query above the configured ceiling
+returns a truncated result with HTTP 200 and no `Warning` header. The 10-million-row scenarios are
+therefore out of its reach. The ceiling is not a licence gate.
+
+Running the ES|QL cells at 1M requires raising the cluster setting from its 10,000 default, which
+the runner **refuses to do for you** — it reads the effective value, records it in every run, and
+prints the command:
+
+```bash
+curl -XPUT localhost:9200/_cluster/settings -H 'Content-Type: application/json' \
+  -d '{"persistent":{"esql.query.result_truncation_max_size":1000000}}'
+```
 
 ## Requirements
 
@@ -61,6 +81,36 @@ docker compose up -d flight-sql trino
 
 # Cross-index JOIN (J0–J2)
 .venv/bin/python runners/orchestrate_join.py
+```
+
+### Sensitivity and control arms
+
+Each of these is tagged so its runs can never blend into the headline medians.
+
+```bash
+# Data-equivalence gate FIRST: same row counts, same group values, and
+# Elasticsearch's own error bounds on the pushed-down aggregation.
+.venv/bin/python runners/verify_equivalence.py --out gate.json
+
+# ES|QL, both wire formats
+.venv/bin/python runners/orchestrate.py --stacks esql --scenarios S1m S3 S4
+.venv/bin/python runners/orchestrate.py --stacks esql --scenarios S1m S3 S4 --esql-route arrow
+
+# The honest floor: sliced scroll, 5 processes
+.venv/bin/python runners/orchestrate.py --stacks es-raw --scenarios S0 S0p
+
+# Drift control: re-run the first stack's block at the end of the session
+.venv/bin/python runners/orchestrate.py --scenarios S1 --drift-scenarios S1 --stop-idle-engine
+
+# Page size: tuned on their side, tuned on ours (both are possible on 0.2.5)
+.venv/bin/python runners/orchestrate.py --stacks trino --scenarios S1 --trino-catalog elasticsearch_tuned
+ARROW_BATCH_SIZE=5000 docker compose up -d flight-sql
+
+# The Flight dial: publish the DNS cost the IP literal avoids
+.venv/bin/python runners/orchestrate.py --stacks flight --scenarios S4 --dial hostname
+
+# S6 with Trino's fastest client, not only its stock one
+.venv/bin/python runners/orchestrate_concurrent.py --budget 8 --route connectorx
 ```
 
 Results are written under `results/<session>/`, one JSON per run, with the environment and the

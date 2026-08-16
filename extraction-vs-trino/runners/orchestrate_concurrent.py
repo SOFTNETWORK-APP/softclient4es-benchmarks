@@ -28,6 +28,14 @@ cannot have -- the same contention trap that invalidated a first attempt at S5.
 is a different question this scenario does not answer: the sidecar and Trino are
 both capped at 4 GB / 4 CPU here, and at high N the engine, not the client, may
 be the limit. Where that happens the result is reported as-is and labelled.
+
+⚠️ FAIRNESS: RUN TRINO'S BEST CLIENT TOO (--route connectorx). S1 grants Trino
+its fastest clients and publishes where they beat us; measuring S6 with only the
+stock client and reporting "5 versus 0" would abandon that rule three scenarios
+later, which is the internal inconsistency an external reviewer flagged on
+2026-08-16. connectorx peaks around 2.9 GB on this workload, so it is expected to
+complete about two concurrent clients in an 8 GB budget rather than none -- and
+"5 versus 2" is the result to publish, because it is the one that is true.
 """
 import argparse
 import concurrent.futures
@@ -85,11 +93,15 @@ def set_engines(active):
     sys.exit(f"{ENGINE_SERVICE[active]} did not all become healthy -- aborting")
 
 
-def one(engine, cap_mb, idx, timeout=3600):
+def one(engine, cap_mb, idx, route="stock", timeout=3600):
+    # The client-container already implements Trino's connectorx route as
+    # `--mode full-cx` (added for S5); S6 only ever lacked the plumbing to ask
+    # for it.
+    mode = "full-cx" if route == "connectorx" else "full"
     cmd = ["docker", "run", "--rm", "--network", NETWORK,
            "--memory", f"{cap_mb}m", "--memory-swap", f"{cap_mb}m",
-           "--name", f"s6-{engine}-{idx}",
-           IMAGE, "--engine", engine, "--mode", "full",
+           "--name", f"s6-{engine}-{route}-{idx}",
+           IMAGE, "--engine", engine, "--mode", mode,
            "--cap-label", f"{cap_mb}m"]
     t0 = time.perf_counter()
     try:
@@ -105,7 +117,7 @@ def one(engine, cap_mb, idx, timeout=3600):
             except json.JSONDecodeError:
                 pass
     ok = r.returncode == 0 and payload and payload.get("rows_ok")
-    return {"idx": idx,
+    return {"idx": idx, "route": route,
             "outcome": "completed" if ok else ("OOM-KILLED" if r.returncode == 137
                                                else f"failed(exit {r.returncode})"),
             "exit_code": r.returncode,
@@ -122,6 +134,10 @@ def main():
                    help="concurrency levels to try")
     p.add_argument("--engines", nargs="+", default=["flight", "trino"],
                    choices=["flight", "trino"])
+    p.add_argument("--route", default="stock", choices=["stock", "connectorx"],
+                   help="Trino client route. 'connectorx' is Trino's fastest "
+                        "client and the fair comparison S1 already publishes; "
+                        "ignored for the flight engine, which has one client.")
     p.add_argument("--session")
     a = p.parse_args()
 
@@ -133,21 +149,26 @@ def main():
 
     all_results = []
     for engine in a.engines:
+        # The route names the client, and the client is the subject of S6 -- so it
+        # is in the record and in the filename, never inferable only from a shell
+        # history.
+        route = a.route if engine == "trino" else "stock"
         set_engines(engine)
         for n in a.levels:
             cap_mb = int(a.budget * 1024 / n)
-            label = f"[{engine} N={n} cap={cap_mb}m each]"
+            label = f"[{engine}/{route} N={n} cap={cap_mb}m each]"
             print(f"{label} launching", flush=True)
             t0 = time.perf_counter()
             with concurrent.futures.ThreadPoolExecutor(max_workers=n) as ex:
-                runs = list(ex.map(lambda i: one(engine, cap_mb, i), range(n)))
+                runs = list(ex.map(lambda i: one(engine, cap_mb, i, route), range(n)))
             wall = time.perf_counter() - t0
             ok = sum(1 for r in runs if r["outcome"] == "completed")
-            rec = {"engine": engine, "n": n, "cap_mb": cap_mb,
+            rec = {"engine": engine, "route": route, "n": n, "cap_mb": cap_mb,
                    "budget_gib": a.budget, "completed": ok,
                    "total_wall_s": wall, "runs": runs}
             all_results.append(rec)
-            (session / f"{engine}-n{n}.json").write_text(json.dumps(rec, indent=2))
+            suffix = "" if route == "stock" else f"-{route}"
+            (session / f"{engine}{suffix}-n{n}.json").write_text(json.dumps(rec, indent=2))
             print(f"{label} -> {ok}/{n} completed in {wall:.1f}s total", flush=True)
             if ok == 0:
                 print(f"{label} none fit at this split; stopping this engine", flush=True)
@@ -155,9 +176,11 @@ def main():
 
     (session / "summary.json").write_text(json.dumps(all_results, indent=2))
     print("\n=== S6: concurrent extractions within a fixed client budget ===", flush=True)
-    print(f"{'engine':<9}{'N':>3}{'cap each':>11}{'completed':>11}{'total wall':>12}", flush=True)
+    print(f"{'engine':<9}{'route':<11}{'N':>3}{'cap each':>11}{'completed':>11}"
+          f"{'total wall':>12}", flush=True)
     for r in all_results:
-        print(f"{r['engine']:<9}{r['n']:>3}{r['cap_mb']:>10}m{r['completed']:>8}/{r['n']:<2}"
+        print(f"{r['engine']:<9}{r.get('route', 'stock'):<11}{r['n']:>3}"
+              f"{r['cap_mb']:>10}m{r['completed']:>8}/{r['n']:<2}"
               f"{r['total_wall_s']:>11.1f}s", flush=True)
     print(f"\nwrote {session}/summary.json", flush=True)
 

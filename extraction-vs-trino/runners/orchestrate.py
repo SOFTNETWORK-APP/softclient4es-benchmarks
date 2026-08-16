@@ -10,8 +10,14 @@ state from turning into an apparent wire-format effect over a multi-hour session
 
     python runners/orchestrate.py                          # full matrix, new session
     python runners/orchestrate.py --scenarios S4           # one scenario (bring-up)
-    python runners/orchestrate.py --limit 10000            # Community-scale rehearsal
     python runners/orchestrate.py --session results/2026...  # resume / top up
+
+    # the blocks added 2026-08-16 for the external-review campaign
+    python runners/orchestrate.py --stacks esql --scenarios S1m S3 S4
+    python runners/orchestrate.py --stacks es-raw --scenarios S0 S0p
+    python runners/orchestrate.py --stacks flight --scenarios S1 --drift-scenarios S1
+    python runners/orchestrate.py --stacks trino --scenarios S1 --trino-catalog elasticsearch_tuned
+    python runners/orchestrate.py --stacks flight --scenarios S4 --dial hostname
 
 Resume is by output file: an existing <stack>-<scenario>-run<N>.json is left alone,
 so an interrupted session continues where it stopped instead of restarting.
@@ -26,12 +32,13 @@ import subprocess
 import sys
 import time
 
-from scenarios import (ENGINE_SERVICES, REQUIRED_STACKS, SCENARIOS,
+from scenarios import (ENGINE_SERVICES, REQUIRED_STACKS, SCENARIOS, stacks_for,
                        wait_trino_cluster)
 
 HERE = pathlib.Path(__file__).resolve().parent
 RESULTS = HERE.parent / "results"
-RUNNERS = {"es-raw": "run_es.py", "flight": "run_flight.py", "trino": "run_trino.py"}
+RUNNERS = {"es-raw": "run_es.py", "flight": "run_flight.py", "trino": "run_trino.py",
+           "esql": "run_esql.py"}
 # Which compose services each stack needs up; used by --stop-idle-engine.
 # Trino is a 3-node cluster, so this is a LIST per stack -- see scenarios.py.
 ENGINE_OF = ENGINE_SERVICES
@@ -42,6 +49,9 @@ ENGINE_OF = ENGINE_SERVICES
 DTYPE_BACKEND = "default"
 FRAME = "default"
 ROUTE = "default"
+ESQL_ROUTE = "json"
+DIAL = "ip"
+TRINO_CATALOG = "elasticsearch"
 
 
 def one(stack, scenario, index, variant, out=None, timeout=7200):
@@ -49,12 +59,21 @@ def one(stack, scenario, index, variant, out=None, timeout=7200):
            "--index", index]
     if variant:
         cmd += ["--variant", variant]
-    if DTYPE_BACKEND != "default" and stack != "es-raw":
+    # Flags are stack-scoped on purpose: passing a Trino client-route flag to the
+    # ES|QL runner (or a pandas dtype flag to the raw scroll) would fail the run
+    # rather than be ignored, and a failed run inside a block reads as a defect.
+    if DTYPE_BACKEND != "default" and stack in ("flight", "trino"):
         cmd += ["--dtype-backend", DTYPE_BACKEND]
-    if FRAME != "default" and stack != "es-raw":
+    if FRAME != "default" and stack in ("flight", "trino"):
         cmd += ["--frame", FRAME]
     if ROUTE != "default" and stack == "trino":
         cmd += ["--route", ROUTE]
+    if stack == "esql":
+        cmd += ["--route", ESQL_ROUTE]
+    if DIAL != "ip" and stack == "flight":
+        cmd += ["--dial", DIAL]
+    if TRINO_CATALOG != "elasticsearch" and stack == "trino":
+        cmd += ["--catalog", TRINO_CATALOG]
     if out:
         cmd += ["--out", str(out)]
     return subprocess.run(cmd, timeout=timeout, capture_output=True, text=True)
@@ -76,6 +95,12 @@ def run_with_retry(stack, scenario, index, variant, out=None):
             sys.exit(f"\n{stack}/{scenario}: correctness gate failed -- aborting the "
                      "session rather than reporting a run that did not return the "
                      "expected data.")
+        if "refusing to" in r.stderr:
+            # A guard refusal (host unfit, assertions disabled, ES|QL ceiling below
+            # the cell) is a decision, not a transient. Retrying it burns a run and
+            # arrives at the same place, one screen further from the reason.
+            sys.exit(f"\n{stack}/{scenario}: a guard refused this run -- aborting. "
+                     "The refusal above says what to change.")
         if attempt == 1:
             print(f"[{stack} {scenario}] failed (exit {r.returncode}), retrying once",
                   flush=True)
@@ -133,6 +158,26 @@ def environment(session):
     capture("docker-info.txt", ["docker", "info"])
     capture("uname.txt", ["uname", "-a"])
     capture("cpu.txt", ["sysctl", "-n", "machdep.cpu.brand_string"])
+    # BOTH page sizes, read from what is actually running. METHODOLOGY's fairness
+    # rule is that the two sides page identically; a rule stated in prose and never
+    # captured is a rule nobody can check afterwards -- and since the tuned arm
+    # exists, "which page size produced this session" stopped being a constant.
+    capture("page-sizes.txt", ["sh", "-c",
+            'cid=$(docker compose ps -aq flight-sql | head -1); '
+            '[ -n "$cid" ] && docker inspect "$cid" --format '
+            '"sidecar_env={{range .Config.Env}}{{println .}}{{end}}" '
+            '| grep -i ARROW_BATCH_SIZE; '
+            'echo "--- trino catalogs ---"; '
+            'grep -H "scroll-size" trino/catalog/*.properties'],
+            cwd=str(HERE.parent))
+    # ES|QL is a third stack whose behaviour depends on a CLUSTER setting, not on a
+    # container: record the effective ceiling, or an ES|QL figure cannot be
+    # attributed to the configuration that produced it.
+    capture("esql-settings.txt", ["sh", "-c",
+            "curl -s 'localhost:9200/_cluster/settings"
+            "?include_defaults=true&flat_settings=true' "
+            "| tr ',' '\\n' | grep -i esql.query.result_truncation; "
+            "curl -s localhost:9200/_license | tr ',' '\\n' | grep -i '\"type\"'"])
 
 
 def wait_healthy(service, timeout=300):
@@ -238,7 +283,11 @@ def main():
     p.add_argument("--warmups", type=int, default=2)
     p.add_argument("--runs", type=int, default=5)
     p.add_argument("--scenarios", nargs="+", default=SCENARIOS, choices=SCENARIOS)
-    p.add_argument("--stacks", nargs="+", default=list(RUNNERS), choices=list(RUNNERS))
+    # ES|QL is opt-in, NOT part of the default matrix: its cells need a cluster
+    # setting raised deliberately, so a default run on a stock cluster would abort
+    # hours in, after S0/S0p/S1 had already completed.
+    p.add_argument("--stacks", nargs="+", default=["es-raw", "flight", "trino"],
+                   choices=list(RUNNERS))
     p.add_argument("--index", default="bench_events_10m")
     p.add_argument("--variant", default="",
                    help="tag for a sensitivity variant, e.g. 4shard; keeps it out of "
@@ -261,15 +310,37 @@ def main():
                         "variant so these runs never blend into the headline "
                         "medians.")
     p.add_argument("--route", default="default", choices=["default", "connectorx", "adbc"],
-                   help="S1 sensitivity variant, Trino only: land the Arrow table "
+                   help="S1/S1m sensitivity variant, Trino only: land the Arrow table "
                         "via connectorx or the ADBC Foundry trino driver instead "
                         "of stock trino.dbapi fetchall. Use with --stacks trino.")
+    p.add_argument("--esql-route", default="json", choices=["json", "arrow"],
+                   help="ES|QL wire format: the row-shaped json every client speaks "
+                        "(default, and the one that sits in the cross-stack "
+                        "comparison), or Elasticsearch's native Arrow IPC stream.")
+    p.add_argument("--dial", default="ip", choices=["ip", "hostname"],
+                   help="Flight only: how the sidecar is addressed. 'hostname' "
+                        "measures the Go-driver DNS cost the IP literal avoids, so "
+                        "the S4 control can publish both.")
+    p.add_argument("--trino-catalog", default="elasticsearch",
+                   choices=["elasticsearch", "elasticsearch_tuned"],
+                   help="Trino page-size arm: the default catalog (scroll-size 1000, "
+                        "symmetric with ARROW_BATCH_SIZE) or the tuned one (5000). "
+                        "The tuned arm auto-tags its runs so they cannot blend into "
+                        "the headline medians.")
+    p.add_argument("--drift-scenarios", nargs="+", default=[], choices=SCENARIOS,
+                   help="after the plan, re-run the FIRST stack of each named "
+                        "scenario and write it as drift-*. An A-B-A block: the two "
+                        "A blocks bound the session drift that would otherwise be "
+                        "confounded with engine identity.")
     a = p.parse_args()
 
-    global DTYPE_BACKEND, FRAME, ROUTE
+    global DTYPE_BACKEND, FRAME, ROUTE, ESQL_ROUTE, DIAL, TRINO_CATALOG
     DTYPE_BACKEND = a.dtype_backend
     FRAME = a.frame
     ROUTE = a.route
+    ESQL_ROUTE = a.esql_route
+    DIAL = a.dial
+    TRINO_CATALOG = a.trino_catalog
     if a.frame != "default" and a.dtype_backend != "default":
         sys.exit("--dtype-backend is a pandas concept; do not combine with --frame")
     if a.frame in ("polars-cx", "polars-adbc", "pandas-cx", "pandas-adbc") and a.stacks != ["trino"]:
@@ -282,6 +353,15 @@ def main():
         a.variant = a.frame.replace("-", "")   # polars / polarscx / polarsadbc
     if a.route != "default" and not a.variant:
         a.variant = "arrow" + ("cx" if a.route == "connectorx" else a.route)
+    # Every sensitivity flag must reach the FILENAME, not only the run JSON: the
+    # resume logic keys on `<variant>-<stack>-<scenario>-runN.json`, so an untagged
+    # tuned/hostname/arrow block would find the headline block's files and report
+    # "already complete, skipping" -- producing zero runs and looking like success.
+    for flag, tag in ((a.esql_route != "json", a.esql_route),
+                      (a.dial != "ip", f"dial{a.dial}"),
+                      (a.trino_catalog != "elasticsearch", "tuned")):
+        if flag and tag not in a.variant.split("-"):
+            a.variant = f"{a.variant}-{tag}" if a.variant else tag
 
     if a.runs < 5 or a.warmups < 2:
         print(f"WARNING: {a.warmups} warmups / {a.runs} runs is below the "
@@ -302,7 +382,7 @@ def main():
     environment(session)
 
     plan = [(sc, st) for sc in a.scenarios
-            for st in sorted(REQUIRED_STACKS[sc] & set(a.stacks))]
+            for st in sorted(stacks_for(sc) & set(a.stacks))]
     (session / "plan.json").write_text(json.dumps(
         {"warmups": a.warmups, "runs": a.runs, "index": a.index,
          "variant": a.variant, "plan": plan}, indent=2))
@@ -326,6 +406,40 @@ def main():
             print(f"[{stack} {scenario}] run {i}/{a.runs}", flush=True)
             run_with_retry(stack, scenario, a.index, a.variant, out)
             done += 1
+    # ── drift control ────────────────────────────────────────────────────────
+    # Runs are blocked by stack (one engine up at a time is a hard constraint of a
+    # 10-vCPU VM), so within a session the A block and the B block are separated in
+    # time and any monotonic drift -- thermal, page cache, host state -- is
+    # confounded with engine identity. Interleaving run-by-run would trade that
+    # confound for a worse one: three JVM restarts per run, i.e. a JIT warm-up
+    # confound. Re-running the FIRST stack at the END bounds the drift instead of
+    # assuming it away: if drift-A matches A inside the published spread, the
+    # objection is closed with data.
+    for scenario in a.drift_scenarios:
+        stacks = sorted(stacks_for(scenario) & set(a.stacks))
+        if not stacks:
+            continue
+        stack = stacks[0]
+        # A DISTINCT variant, not just a distinct filename: summarize.py groups by
+        # what the run FILE says, so a drift run tagged like its own A block would
+        # silently double the sample and hide the very drift it was run to expose.
+        drift_variant = f"{a.variant}-drift" if a.variant else "drift"
+        pending = [i for i in range(1, a.runs + 1)
+                   if not (session / f"{drift_variant}-{stack}-{scenario}-run{i}.json"
+                           ).exists()]
+        if not pending:
+            print(f"[drift {stack} {scenario}] already complete, skipping", flush=True)
+            continue
+        set_engines(stack, a.stop_idle_engine)
+        for i in range(a.warmups):
+            print(f"[drift {stack} {scenario}] warmup {i + 1}/{a.warmups}", flush=True)
+            run_with_retry(stack, scenario, a.index, drift_variant)
+        for i in pending:
+            out = session / f"{drift_variant}-{stack}-{scenario}-run{i}.json"
+            print(f"[drift {stack} {scenario}] run {i}/{a.runs}", flush=True)
+            run_with_retry(stack, scenario, a.index, drift_variant, out)
+            done += 1
+
     print(f"\ncompleted {done} measured run(s)")
     print(f"session: {session}")
 

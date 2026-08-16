@@ -16,11 +16,16 @@ import time
 from trino.dbapi import connect
 
 from scenarios import (DEFAULT_INDEX, ENGINE_SERVICES, EXPECTED_COLS_TRINO_S1,
-                       SQL_AGG_DUCK, check, emit, guard_environment, memory_pressure,
-                       net_bytes, net_bytes_all, net_delta, peak_footprint_mb, peak_rss_mb,
-                       sql_for)
+                       SQL_AGG_DUCK, check, emit, guard_environment, host_load,
+                       memory_pressure, net_bytes, net_bytes_all, net_delta,
+                       peak_footprint_mb, peak_rss_mb, sql_for)
 
-SCENARIOS = ["S1", "S1r", "S2", "S3", "S4"]
+SCENARIOS = ["S1", "S1m", "S1r", "S2", "S3", "S4"]
+# Set once from --catalog in __main__. `elasticsearch` is the headline catalog
+# (page size 1000, Trino's own default); `elasticsearch_tuned` is the sensitivity
+# arm at 5000. Same connector, same cluster, same SQL -- one property differs, and
+# it is the one an external reviewer was right to ask about.
+CATALOG = "elasticsearch"
 
 
 def run_s1r_dataframe(sql, dtype_backend, frame="pandas"):
@@ -55,7 +60,7 @@ def run_s1r_dataframe(sql, dtype_backend, frame="pandas"):
         # in the SQL here. Same namespace, not a different query.
         cx_sql = sql.replace(" FROM ", " FROM default.", 1)
         q0 = time.perf_counter()
-        df = cx.read_sql("trino://bench@localhost:8080/elasticsearch",
+        df = cx.read_sql(f"trino://bench@localhost:8080/{CATALOG}",
                          cx_sql, return_type="polars")
         rows, cols = df.height, df.width
         dispose = None
@@ -66,7 +71,7 @@ def run_s1r_dataframe(sql, dtype_backend, frame="pandas"):
         connect_s = 0.0                        # one-shot API: connect not separable
         cx_sql = sql.replace(" FROM ", " FROM default.", 1)
         q0 = time.perf_counter()
-        df = cx.read_sql("trino://bench@localhost:8080/elasticsearch",
+        df = cx.read_sql(f"trino://bench@localhost:8080/{CATALOG}",
                          cx_sql, return_type="pandas")
         rows, cols = len(df), df.shape[1]
         dispose = None
@@ -79,8 +84,8 @@ def run_s1r_dataframe(sql, dtype_backend, frame="pandas"):
         from adbc_driver_manager import dbapi as adbc_dbapi
         conn = adbc_dbapi.connect(
             driver="trino",
-            db_kwargs={"uri": "http://bench@localhost:8080"
-                              "?catalog=elasticsearch&schema=default"})
+            db_kwargs={"uri": f"http://bench@localhost:8080"
+                              f"?catalog={CATALOG}&schema=default"})
         cur = conn.cursor()
         connect_s = time.perf_counter() - t0
         q0 = time.perf_counter()
@@ -99,8 +104,8 @@ def run_s1r_dataframe(sql, dtype_backend, frame="pandas"):
         from adbc_driver_manager import dbapi as adbc_dbapi
         conn = adbc_dbapi.connect(
             driver="trino",
-            db_kwargs={"uri": "http://bench@localhost:8080"
-                              "?catalog=elasticsearch&schema=default"})
+            db_kwargs={"uri": f"http://bench@localhost:8080"
+                              f"?catalog={CATALOG}&schema=default"})
         cur = conn.cursor()
         connect_s = time.perf_counter() - t0
         q0 = time.perf_counter()
@@ -110,7 +115,8 @@ def run_s1r_dataframe(sql, dtype_backend, frame="pandas"):
         dispose = (cur.close, conn.close)
     else:
         from sqlalchemy import create_engine
-        engine = create_engine("trino://bench@localhost:8080/elasticsearch/default")
+        engine = create_engine(
+            f"trino://bench@localhost:8080/{CATALOG}/default")
         conn = engine.connect()
         connect_s = time.perf_counter() - t0
         q0 = time.perf_counter()
@@ -149,7 +155,7 @@ def run(scenario, index, encoding=None, request_timeout=None, dtype_backend="def
     sql = sql_for(scenario, index)
     if scenario == "S1r":
         return run_s1r_dataframe(sql, dtype_backend, frame)
-    if scenario == "S1" and route == "adbc":
+    if scenario in ("S1", "S1m") and route == "adbc":
         # A REAL ADBC driver for Trino exists (ADBC Driver Foundry v0.5.1,
         # tested with Trino 483 -- the exact engine version here). This makes S1
         # the identical client API on both stacks: adbc dbapi + fetch_arrow_table,
@@ -160,8 +166,8 @@ def run(scenario, index, encoding=None, request_timeout=None, dtype_backend="def
         t0, c0 = time.perf_counter(), time.process_time()
         conn = adbc_dbapi.connect(
             driver="trino",
-            db_kwargs={"uri": "http://bench@localhost:8080"
-                              "?catalog=elasticsearch&schema=default"})
+            db_kwargs={"uri": f"http://bench@localhost:8080"
+                              f"?catalog={CATALOG}&schema=default"})
         cur = conn.cursor()
         connect_s = time.perf_counter() - t0
         q0 = time.perf_counter()
@@ -179,11 +185,12 @@ def run(scenario, index, encoding=None, request_timeout=None, dtype_backend="def
                "mem_pressure": memory_pressure()}
         cur.close()
         conn.close()
-        check("S1", out)
+        check(scenario, out)
         assert out["cols"] == EXPECTED_COLS_TRINO_S1, (
-            f"S1: expected {EXPECTED_COLS_TRINO_S1} columns from Trino, got {out['cols']}")
+            f"{scenario}: expected {EXPECTED_COLS_TRINO_S1} columns from Trino, "
+            f"got {out['cols']}")
         return out
-    if scenario == "S1" and route == "connectorx":
+    if scenario in ("S1", "S1m") and route == "connectorx":
         # The de-facto ADBC-equivalent for Trino: no ADBC driver exists (Trino's
         # wire is JSON-paged REST, not Arrow, and it serves no Flight SQL
         # endpoint), but connectorx's Rust core parses those JSON pages straight
@@ -194,7 +201,7 @@ def run(scenario, index, encoding=None, request_timeout=None, dtype_backend="def
         import connectorx as cx                # imported here: never weighs on stock runs
         t0, c0 = time.perf_counter(), time.process_time()
         cx_sql = sql.replace(" FROM ", " FROM default.", 1)
-        tbl = cx.read_sql("trino://bench@localhost:8080/elasticsearch",
+        tbl = cx.read_sql(f"trino://bench@localhost:8080/{CATALOG}",
                           cx_sql, return_type="arrow")
         out = {"rows": tbl.num_rows, "cols": tbl.num_columns,
                "col_names": list(tbl.schema.names),
@@ -206,12 +213,13 @@ def run(scenario, index, encoding=None, request_timeout=None, dtype_backend="def
                "peak_rss_mb": peak_rss_mb(),
                "peak_footprint_mb": peak_footprint_mb(),
                "mem_pressure": memory_pressure()}
-        check("S1", out)
+        check(scenario, out)
         assert out["cols"] == EXPECTED_COLS_TRINO_S1, (
-            f"S1: expected {EXPECTED_COLS_TRINO_S1} columns from Trino, got {out['cols']}")
+            f"{scenario}: expected {EXPECTED_COLS_TRINO_S1} columns from Trino, "
+            f"got {out['cols']}")
         return out
     kwargs = dict(host="localhost", port=8080, user="bench",
-                  catalog="elasticsearch", schema="default")
+                  catalog=CATALOG, schema="default")
     if encoding:                       # optional S1-spooled variant
         kwargs["encoding"] = encoding
     if request_timeout:                # per-HTTP-poll timeout; recorded when used
@@ -222,7 +230,7 @@ def run(scenario, index, encoding=None, request_timeout=None, dtype_backend="def
     connect_s = time.perf_counter() - t0
     q0 = time.perf_counter()
     out = {}
-    if scenario == "S1":
+    if scenario in ("S1", "S1m"):
         cur.execute(sql)
         rows = cur.fetchall()                  # materialized client-side table
         out["rows"], out["cols"] = len(rows), len(cur.description)
@@ -255,9 +263,10 @@ def run(scenario, index, encoding=None, request_timeout=None, dtype_backend="def
     conn.close()
 
     check(scenario, out)
-    if scenario == "S1":
+    if scenario in ("S1", "S1m"):
         assert out["cols"] == EXPECTED_COLS_TRINO_S1, (
-            f"S1: expected {EXPECTED_COLS_TRINO_S1} columns from Trino, got {out['cols']}")
+            f"{scenario}: expected {EXPECTED_COLS_TRINO_S1} columns from Trino, "
+            f"got {out['cols']}")
     return out
 
 
@@ -275,14 +284,18 @@ if __name__ == "__main__":
                    choices=["pandas", "polars", "polars-cx", "polars-adbc", "pandas-cx", "pandas-adbc"],
                    help="S1r only: which frame library (and route) the result lands in")
     p.add_argument("--route", default="stock", choices=["stock", "connectorx", "adbc"],
-                   help="S1 only: stock trino.dbapi fetchall, connectorx->Arrow, or "
-                        "the ADBC Driver Foundry trino driver->Arrow")
+                   help="S1/S1m only: stock trino.dbapi fetchall, connectorx->Arrow, "
+                        "or the ADBC Driver Foundry trino driver->Arrow")
+    p.add_argument("--catalog", default="elasticsearch",
+                   help="Trino catalog: elasticsearch (default page size 1000) or "
+                        "elasticsearch_tuned (5000) -- the page-size sensitivity arm")
     p.add_argument("--out")
     a = p.parse_args()
+    CATALOG = a.catalog
     if a.frame != "pandas" and a.dtype_backend != "default":
         raise SystemExit("--dtype-backend is a pandas concept; do not combine with --frame")
-    if a.route != "stock" and a.scenario != "S1":
-        raise SystemExit("--route only applies to S1")
+    if a.route != "stock" and a.scenario not in ("S1", "S1m"):
+        raise SystemExit("--route only applies to S1 and S1m")
 
     before = net_bytes_all(ENGINE_SERVICES["trino"])
     # Bytes that actually LEFT Elasticsearch. Summing the engine stack instead
@@ -291,15 +304,25 @@ if __name__ == "__main__":
     # read from ES, the difference being the worker->coordinator exchange.
     # Sampled at the source, the number is independent of engine topology.
     before_es = net_bytes("elasticsearch")
+    load_before = host_load()
     result = run(a.scenario, a.index, a.encoding, a.request_timeout, a.dtype_backend,
                  a.frame, a.route)
     result["net"] = net_delta(before, net_bytes_all(ENGINE_SERVICES["trino"]))
     result["net_es"] = net_delta(before_es, net_bytes("elasticsearch"))
+    result["host_load_before"], result["host_load_after"] = load_before, host_load()
     if a.encoding:
         result["encoding"] = a.encoding
     if a.request_timeout:
         result["request_timeout"] = a.request_timeout
+    # A tuned catalog must never blend into the headline medians -- and the tag
+    # COMPOSES with an explicit --variant instead of being replaced by it, or
+    # `--route connectorx --catalog elasticsearch_tuned` would file tuned runs
+    # under the untuned `arrowcx` median.
+    variant = "-".join(t for t in (a.variant,
+                                   "" if a.catalog == "elasticsearch" else "tuned")
+                       if t)
+    result["catalog"] = a.catalog
     emit({"stack": "trino-spooled" if a.encoding else "trino",
-          "scenario": a.scenario, "index": a.index, "variant": a.variant,
+          "scenario": a.scenario, "index": a.index, "variant": variant,
           "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
           **result}, a.out)

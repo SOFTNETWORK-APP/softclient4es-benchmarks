@@ -44,6 +44,27 @@ TRINO_URL = "http://localhost:8080"
 # Same utilisation, opposite condition. Gate on what macOS itself reports instead.
 MIN_AVAILABLE_GB = 4.0          # free + inactive; inactive is reclaimable without I/O
 VM_PRESSURE_NORMAL = 1          # kern.memorystatus_vm_pressure_level: 1 normal, 2 warn, 4 critical
+
+# Host CPU fitness, checked by guard_environment() and RECORDED per run.
+#
+# The confound this exists to bound: the measured client runs on the HOST while the
+# engines run in the Docker VM, on one machine. Trino's stock client burns ~25 s of
+# CPU per S1 against our ~4.6 s, so if the host were saturated, host contention
+# could CONTRIBUTE to the wall-clock gap instead of merely reflecting it -- and the
+# wall-clock gap is the headline. Client CPU seconds are immune (process_time
+# counts CPU, not waiting); wall clock is not.
+#
+# Gate on the 1-minute load average against the LOGICAL core count, not something
+# tighter: the Docker VM's own 10 busy vCPUs legitimately show up in the host's
+# load while a run is in flight, and our own client is part of the load too. A
+# threshold at 1.0x logical cores does not trip on the benchmark itself; it trips
+# on the thing that actually ruins a session -- a compile, an indexer or a second
+# VM running alongside. Recorded before AND after every run so a reader can judge
+# each figure rather than trust that the machine was quiet.
+MAX_HOST_LOAD_FACTOR = 1.0
+# Only a host this far past its core count is refused outright; at the ordinary
+# ceiling the run is warned about and recorded. See guard_environment().
+PATHOLOGICAL_HOST_LOAD_FACTOR = 2.0
 # Compose derives the project name from the directory holding docker-compose.yml unless
 # COMPOSE_PROJECT_NAME overrides it. Deriving it the same way matters: a wrong value makes
 # net_bytes() return None SILENTLY and the wire-byte column just disappears from RESULTS.
@@ -149,39 +170,116 @@ SQL_AGG_DUCK = ("SELECT category, AVG(amount) AS avg_amount "
 # output in the trino package), so equalising the ARTIFACT is the only honest
 # like-for-like. ⚠️ S1r numbers from sessions before 2026-08-11T15:00 measure the
 # OLD definition and are not comparable.
-EXPECTED_ROWS = {"S0": 10_000_000, "S1": 10_000_000, "S1r": 10_000_000,
+EXPECTED_ROWS = {"S0": 10_000_000, "S0p": 10_000_000, "S1": 10_000_000,
+                 "S1m": 1_000_000, "S1r": 10_000_000,
                  "S2": 10_000_000, "S3": 100, "S4": 100}
 EXPECTED_GROUPS = 100
 SCENARIOS = list(EXPECTED_ROWS)
 
-# Which stacks each scenario requires before its numbers mean anything. S0 is the
-# shared floor (raw Elasticsearch, no engine). S1r runs on BOTH stacks since the
-# time-to-DataFrame redefinition.
-REQUIRED_STACKS = {"S0": {"es-raw"}, "S1": {"flight", "trino"},
+# Which stacks each scenario requires before its numbers mean anything. S0/S0p are
+# the shared floors (raw Elasticsearch, no engine). S1r runs on BOTH stacks since
+# the time-to-DataFrame redefinition. S1m is the only cell where all THREE stacks
+# can compete -- see ESQL_MAX_RESULT_ROWS for why ES|QL is absent everywhere else.
+REQUIRED_STACKS = {"S0": {"es-raw"}, "S0p": {"es-raw"}, "S1": {"flight", "trino"},
+                   "S1m": {"flight", "trino"},
                    "S1r": {"flight", "trino"}, "S2": {"flight", "trino"},
                    "S3": {"flight", "trino"}, "S4": {"flight", "trino"}}
 
-# Trino returns exactly the 8 selected columns. The Flight schema additionally
-# carries _id/_index/_score/_sort hit-metadata columns, because the sidecar infers
-# the statement schema from the row keys rather than from the SQL projection
-# (VERIFIED: ElasticConversion appends metadata to every hit row;
-# ElasticFlightProducer.probeSchema -> ArrowTypeMapping.inferSchema(rows)).
-# So SoftClient4ES moves MORE bytes per row than the SQL asked for -- the bias
-# runs against it. Gate on >= and RECORD the real count.
+# Stacks a scenario ACCEPTS but does not require. ES|QL is optional rather than
+# required for two reasons, both of which cost a session if it is required:
+# every session recorded before 2026-08-16 has no ES|QL runs and must stay
+# summarizable, and the ES|QL cells need a deliberately raised cluster setting,
+# so a stock cluster would abort a full matrix hours in. Whether ES|QL is
+# actually RUN is a campaign decision (it is: see the review-triage brief), not
+# something a correctness gate can enforce.
+OPTIONAL_STACKS = {"S1m": {"esql"}, "S3": {"esql"}, "S4": {"esql"}}
+
+
+def stacks_for(scenario):
+    """Every stack that may legitimately produce runs for this scenario."""
+    return REQUIRED_STACKS.get(scenario, set()) | OPTIONAL_STACKS.get(scenario, set())
+
+# Both engines return exactly the 8 selected columns.
+#
+# HISTORY, because this used to say something else and the harness must not
+# outlive its own facts: until SoftClient4ES core#226 the Flight schema also
+# carried _id/_index/_score/_sort hit-metadata columns (the sidecar infers the
+# statement schema from row keys, not from the SQL projection), so SoftClient4ES
+# moved MORE bytes per row than the SQL asked for and this gate was a >=. That
+# metadata was removed in core#226 (_index/_score/_sort deleted, _id opt-in and
+# off by default); the released 0.2.5 image measured here returns 8 of 8, which
+# is what RESULTS S1 publishes. `extra_cols` is still recorded per run so a
+# regression shows up in the data rather than in nobody's memory.
 EXPECTED_COLS_TRINO_S1 = len(COLUMNS)
 EXPECTED_MIN_COLS_FLIGHT_S1 = len(COLUMNS)
+
+# ── ES|QL, the third stack ───────────────────────────────────────────────────
+ESQL_URL = "http://localhost:9200/_query"
+# ES|QL cannot return more than this, and the ceiling is NOT a licence gate:
+# `esql.query.result_truncation_max_size` is declared
+#   Setting.intSetting("esql.query.result_truncation_max_size", 10000, 1, 1000000,
+#                      NodeScope, Dynamic)          -- EsqlPlugin.java, v8.18.3
+# so 10,000 is the default, 1,000,000 the hard maximum, and a cluster set to the
+# maximum answers `LIMIT 10000000` with 1,000,000 rows, HTTP 200 and NO Warning
+# header (measured 2026-08-16 on this cluster, which runs a `basic` licence with
+# `_xpack/usage` reporting esql.available=true -- a trial changes nothing).
+#
+# Consequences the runners encode: ES|QL competes on S1m/S3/S4 and CANNOT enter
+# S1/S2/S5/S6, and the silent truncation is why run_esql.py asserts the row count
+# rather than trusting a 200.
+ESQL_MAX_RESULT_ROWS = 1_000_000
+# The S1m size. Deliberately equal to ES|QL's hard ceiling: the one scale at which
+# all three stacks can be compared like for like, and the boundary a reader wants
+# to see. Verified against the released 0.2.5 sidecar at bring-up (LIMIT 1000000
+# returns 1,000,000 rows over Flight SQL, so the explicit-LIMIT path is not the
+# bounded <=10k one). ⚠️ A predicate was considered and rejected: the generator's
+# ids are random draws, not a permutation (10,000,000 docs, 9,931,188 distinct),
+# so `WHERE id <= 1000000` yields 1,000,001 rows -- one row over ES|QL's ceiling,
+# which it would have TRUNCATED SILENTLY. The bug that fix avoids is the exact
+# class this benchmark exists to catch.
+S1M_ROWS = 1_000_000
 
 
 def sql_for(scenario, index=DEFAULT_INDEX):
     projection = ", ".join(COLUMNS)
-    if scenario in ("S1", "S1r", "S2"):
+    if scenario in ("S1", "S1r", "S2", "S0", "S0p"):
         return f"SELECT {projection} FROM {index}"
+    if scenario == "S1m":
+        return f"SELECT {projection} FROM {index} LIMIT {S1M_ROWS}"
     if scenario == "S3":
         return ("SELECT category, COUNT(*) AS cnt, AVG(amount) AS avg_amount "
                 f"FROM {index} GROUP BY category")
     if scenario == "S4":
         return f"SELECT {projection} FROM {index} LIMIT 100"
     raise SystemExit(f"no SQL for scenario {scenario}")
+
+
+def esql_for(scenario, index=DEFAULT_INDEX):
+    """The ES|QL translation of the same scenario.
+
+    ES|QL is a different LANGUAGE, not a different driver, so this is the one
+    place where a runner's statement is not `sql_for()` verbatim. It lives here
+    for the same reason every other statement does: two stacks that could drift
+    apart would stop comparing like with like. Keep the projection, the
+    aggregation and the row bound identical to sql_for() -- only the syntax moves.
+
+    Every query carries an explicit LIMIT because ES|QL's DEFAULT is 1,000 rows
+    (`esql.query.result_truncation_default_size`), i.e. a query with no LIMIT
+    silently answers a different question than the SQL it mirrors.
+    """
+    projection = ", ".join(COLUMNS)
+    if scenario == "S1m":
+        return f"FROM {index} | KEEP {projection} | LIMIT {S1M_ROWS}"
+    if scenario == "S3":
+        return (f"FROM {index} | STATS cnt = COUNT(*), avg_amount = AVG(amount) "
+                "BY category | LIMIT 1000")
+    if scenario == "S4":
+        return f"FROM {index} | KEEP {projection} | LIMIT 100"
+    raise SystemExit(
+        f"no ES|QL for scenario {scenario}. S1/S1r/S2 extract 10,000,000 rows, "
+        f"which is above ES|QL's hard ceiling of {ESQL_MAX_RESULT_ROWS:,} "
+        "(see ESQL_MAX_RESULT_ROWS) -- that absence is a published finding, "
+        "not a gap to fill by lowering the row count.")
 
 
 def guard_environment():
@@ -204,6 +302,11 @@ def guard_environment():
        while leaving footprint intact. The heaviest measured arm (Trino's stock
        client to a pandas DataFrame) needs ~8.3 GB, so there has to be somewhere
        for it to go.
+    4. A host whose CPUs are already busy. The client is measured ON THE HOST
+       while the engines run in the Docker VM, so competing host work inflates
+       the client's wall clock -- and wall clock is the headline ratio. Client
+       CPU seconds are immune, which is precisely why the two must be recorded
+       together (see MAX_HOST_LOAD_FACTOR and host_load()).
     """
     if not __debug__:
         sys.exit("refusing to run with assertions disabled: the asserts ARE the "
@@ -245,6 +348,33 @@ def guard_environment():
                 "The client is measured ON THE HOST and the heaviest arm holds several "
                 "GB; below this floor the run pages and its timings are fiction.\n"
                 "Free memory and re-run.")
+
+    # Host CPU fitness. The client is measured on the host while the engines run in
+    # the VM: a busy host inflates the client's WALL clock (its CPU seconds are
+    # immune) and the wall clock is the headline. See MAX_HOST_LOAD_FACTOR.
+    load = host_load()
+    if load and load.get("logical_cpus"):
+        ceiling = load["logical_cpus"] * MAX_HOST_LOAD_FACTOR
+        if load["loadavg_1m"] > ceiling:
+            # WARN, do not refuse, at the ordinary ceiling. The 1-minute average is
+            # DECAYED, so a run started right after a heavy block inherits that
+            # block's load -- including the benchmark's own Docker VM at ~10 busy
+            # vCPUs. A refusal there would let the benchmark abort itself hours into
+            # a session, which is a worse failure than a noisy figure that is
+            # recorded as noisy: every run carries host_load_before/after, and
+            # summarize.py publishes the maximum.
+            print(f"WARNING: host 1-minute load average is {load['loadavg_1m']:.1f} "
+                  f"against {load['logical_cpus']} logical cores -- wall clock may be "
+                  "inflated by host contention (recorded per run).", file=sys.stderr)
+        if load["loadavg_1m"] > ceiling * PATHOLOGICAL_HOST_LOAD_FACTOR:
+            sys.exit(
+                f"refusing to measure: host 1-minute load average is "
+                f"{load['loadavg_1m']:.1f} against {load['logical_cpus']} logical "
+                f"cores, i.e. more than {PATHOLOGICAL_HOST_LOAD_FACTOR:g}x "
+                "oversubscribed.\n"
+                "The measured client runs on the host, so a saturated host inflates "
+                "its wall clock -- the metric the headline ratio is made of.\n"
+                "Stop the other work (compiles, indexers, a second VM) and re-run.")
 
 
 def peak_rss_mb():
@@ -354,6 +484,36 @@ def memory_pressure():
     return out
 
 
+def host_load():
+    """Host CPU load provenance, recorded before and after every run.
+
+    Answers the "the client and the engines share one machine" objection with
+    data instead of prose: if the host kept idle capacity throughout, host
+    contention cannot be what produced the wall-clock gap. Cheap by design --
+    `os.getloadavg()` is a syscall, not a sampling window, so it neither costs
+    measurement time nor perturbs what it measures. Coarse by the same token: a
+    1-minute decayed average is a bound, not an instantaneous reading, which is
+    why it is published as "N cores stayed idle", never as a CPU percentage.
+
+    Best-effort; None where unavailable.
+    """
+    out = {}
+    try:
+        l1, l5, l15 = os.getloadavg()
+        out["loadavg_1m"], out["loadavg_5m"], out["loadavg_15m"] = l1, l5, l15
+    except (OSError, AttributeError):
+        return None
+    out["logical_cpus"] = os.cpu_count()
+    if sys.platform == "darwin":
+        try:
+            r = subprocess.run(["sysctl", "-n", "hw.physicalcpu"],
+                               capture_output=True, text=True, timeout=10)
+            out["physical_cpus"] = int(r.stdout.strip())
+        except (subprocess.SubprocessError, OSError, ValueError):
+            pass
+    return out
+
+
 def _container_id(service):
     try:
         r = subprocess.run(
@@ -429,9 +589,12 @@ def check(scenario, out):
     expected = EXPECTED_ROWS[scenario]
     assert out["rows"] == expected, (
         f"{scenario}: expected {expected:,} rows, got {out['rows']:,}. "
-        "If this is 10,000 the SoftClient4ES licence did not lift the Community "
-        "maxQueryResults cap (METHODOLOGY section 4); if it is smaller than the "
-        "index, the generator did not finish a full load.")
+        "If this is 10,000 on the flight stack the SoftClient4ES licence did not "
+        "lift the Community maxQueryResults cap (METHODOLOGY section 4); if it is "
+        "10,000 on the esql stack the cluster still has the default "
+        "esql.query.result_truncation_max_size (ES|QL truncates ABOVE its ceiling "
+        "with HTTP 200 and no Warning header); if it is smaller than the index, the "
+        "generator did not finish a full load.")
     if scenario == "S2":
         assert out["groups"] == EXPECTED_GROUPS, (
             f"S2: expected {EXPECTED_GROUPS} groups, got {out['groups']}")
