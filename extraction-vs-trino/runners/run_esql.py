@@ -216,8 +216,7 @@ if __name__ == "__main__":
     # route is tagged, which keeps it out of those medians while still publishing
     # it. The tag composes with an explicit --variant rather than replacing it.
     emit({"stack": "esql", "scenario": a.scenario, "index": a.index,
-          "variant": "-".join(t for t in (a.variant,
-                                          "" if a.route == "json" else a.route)
-                              if t),
+          "variant": compose_variant(a.variant,
+                                     "" if a.route == "json" else a.route),
           "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
           **result}, a.out)

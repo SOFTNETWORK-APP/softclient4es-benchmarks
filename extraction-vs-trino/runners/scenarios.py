@@ -195,6 +195,25 @@ REQUIRED_STACKS = {"S0": {"es-raw"}, "S0p": {"es-raw"}, "S1": {"flight", "trino"
 OPTIONAL_STACKS = {"S1m": {"esql"}, "S3": {"esql"}, "S4": {"esql"}}
 
 
+def compose_variant(explicit, *tags):
+    """Join an explicit --variant with the runner's own auto-tags, DEDUPED.
+
+    Both layers tag: orchestrate.py must put the tag in the run FILENAME (its
+    resume logic keys on it), and each runner tags what it was actually asked to
+    do, because a run file has to be self-describing when it is read alone. Left
+    to themselves the two produce `arrow-arrow` / `tuned-tuned`, which is not
+    merely ugly: summarize.py looks the variant up by name, so a doubled tag
+    SILENTLY DROPS the arm from the published table (measured 2026-08-16 -- the
+    ES|QL Arrow runs were all recorded and none of them appeared).
+    """
+    parts = []
+    for t in (explicit, *tags):
+        for piece in (t or "").split("-"):
+            if piece and piece not in parts:
+                parts.append(piece)
+    return "-".join(parts)
+
+
 def stacks_for(scenario):
     """Every stack that may legitimately produce runs for this scenario."""
     return REQUIRED_STACKS.get(scenario, set()) | OPTIONAL_STACKS.get(scenario, set())
