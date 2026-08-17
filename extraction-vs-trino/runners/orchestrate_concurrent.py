@@ -49,7 +49,7 @@ import time
 HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parent
 RESULTS = ROOT / "results"
-from scenarios import ENGINE_SERVICES, wait_trino_cluster
+from scenarios import DEFAULT_INDEX, ENGINE_SERVICES, wait_trino_cluster
 
 IMAGE = "sc4es-bench-client:latest"
 NETWORK = "extraction-vs-trino_default"
@@ -93,13 +93,20 @@ def set_engines(active):
     sys.exit(f"{ENGINE_SERVICE[active]} did not all become healthy -- aborting")
 
 
-def one(engine, cap_mb, idx, route="stock", timeout=3600):
+def one(engine, cap_mb, idx, route="stock", index=DEFAULT_INDEX, timeout=3600):
     # The client-container already implements Trino's connectorx route as
     # `--mode full-cx` (added for S5); S6 only ever lacked the plumbing to ask
     # for it.
     mode = "full-cx" if route == "connectorx" else "full"
+    # BENCH_INDEX is how the client container learns which index to read, exactly
+    # as orchestrate_capped.py passes it. Until 2026-08-17 S6 never passed it, so
+    # it could only ever read the container's default -- and its topology.txt could
+    # not state which index the result came from. A concurrency result labelled
+    # "5 shards" that silently ran the 1-shard index is indistinguishable from a
+    # real one, which is the hazard the capped orchestrator's own comment names.
     cmd = ["docker", "run", "--rm", "--network", NETWORK,
            "--memory", f"{cap_mb}m", "--memory-swap", f"{cap_mb}m",
+           "-e", f"BENCH_INDEX={index}",
            "--name", f"s6-{engine}-{route}-{idx}",
            IMAGE, "--engine", engine, "--mode", mode,
            "--cap-label", f"{cap_mb}m"]
@@ -138,6 +145,8 @@ def main():
                    help="Trino client route. 'connectorx' is Trino's fastest "
                         "client and the fair comparison S1 already publishes; "
                         "ignored for the flight engine, which has one client.")
+    p.add_argument("--index", default=DEFAULT_INDEX,
+                   help="index the concurrent clients read; recorded in topology.txt")
     p.add_argument("--session")
     a = p.parse_args()
 
@@ -146,6 +155,33 @@ def main():
     session.mkdir(parents=True, exist_ok=True)
     print(f"session: {session}", flush=True)
     print(f"budget: {a.budget} GiB total client memory", flush=True)
+
+    # Provenance: the sidecar digest and its jars, same contract as the other two
+    # orchestrators. S6 carries a headline claim ("five concurrent extractions
+    # against two"), and until 2026-08-17 it was the ONE session kind that recorded
+    # no build at all -- so the report's "every figure was measured on image 0.2.5,
+    # digest sha256:d4fb…" was unverifiable for exactly the number people quote.
+    for name, cmd in [
+        ("sidecar-image.txt",
+         'cid=$(docker compose ps -aq flight-sql | head -1); '
+         'docker image inspect "$(docker inspect "$cid" --format "{{.Image}}")" '
+         '--format "repo_digests={{.RepoDigests}}{{println}}created={{.Created}}"'),
+        ("sidecar-jars.txt",
+         'cid=$(docker compose ps -aq flight-sql | head -1); '
+         'img=$(docker inspect "$cid" --format "{{.Image}}"); '
+         'docker run --rm --entrypoint sh "$img" -c "sha256sum /opt/docker/lib/app.softnetwork.*.jar"'),
+    ]:
+        try:
+            r = subprocess.run(["sh", "-c", cmd], cwd=str(ROOT),
+                               capture_output=True, text=True, timeout=180)
+            (session / name).write_text(r.stdout or r.stderr)
+        except Exception as e:
+            (session / name).write_text(f"capture failed: {e}\n")
+
+    (session / "topology.txt").write_text(
+        "index={}\nbudget_gib={}\nlevels={}\nengines={}\nroute={}\n".format(
+            a.index, a.budget, " ".join(str(n) for n in a.levels),
+            " ".join(a.engines), a.route))
 
     all_results = []
     for engine in a.engines:
@@ -160,7 +196,8 @@ def main():
             print(f"{label} launching", flush=True)
             t0 = time.perf_counter()
             with concurrent.futures.ThreadPoolExecutor(max_workers=n) as ex:
-                runs = list(ex.map(lambda i: one(engine, cap_mb, i, route), range(n)))
+                runs = list(ex.map(lambda i: one(engine, cap_mb, i, route, a.index),
+                                   range(n)))
             wall = time.perf_counter() - t0
             ok = sum(1 for r in runs if r["outcome"] == "completed")
             rec = {"engine": engine, "route": route, "n": n, "cap_mb": cap_mb,
