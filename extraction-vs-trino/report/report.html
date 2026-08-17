@@ -60,9 +60,19 @@
     where Trino's Python client materialises rows into Python objects.
     These results hold on a <strong>5-shard index read by a 3-node Trino cluster given 1.5×
     the CPU</strong>, where the extraction gap widens rather than closes (section 7).
-    <strong>Trino remains marginally ahead on cross-index joins</strong>, gains the most from shard
-    parallelism on aggregate-heavy work, and offers capabilities — distributed execution, spill,
-    connector breadth — this benchmark does not exercise (section 8).
+  </p>
+
+  <p>
+    <strong>Where this does not apply.</strong> Below one million rows, Elasticsearch's own query
+    language extracts faster than either engine here and can hand back Arrow directly — section 4
+    publishes those cells, including the ones we lose. (On the pushed-down aggregation it is the
+    other way round: SoftClient4ES answers S3 in 0.03 s against ES|QL's 0.16 s.) ES|QL cannot
+    return more than 1,000,000 rows, which is why the ten-million-row scenarios have no ES|QL
+    column. <strong>Trino is ahead on cross-index joins</strong> — unambiguously on the join with a
+    <code>GROUP BY</code>, within the noise on the other two — is faster on the one-million-row
+    extraction, gains the most from shard parallelism on aggregate-heavy work, and offers
+    capabilities — distributed execution, spill, connector breadth — this benchmark does not
+    exercise (section 8).
   </p>
 
   <div class="note">
@@ -113,24 +123,41 @@
   <div class="note">
     <b>Correctness gate, run before the timings.</b> Row counts alone do not establish that a
     pushed-down aggregation returns the same answer as a full scan, so each session first runs a
-    data-equivalence gate across the stacks: <code>COUNT</code>, <code>SUM(id)</code>,
-    <code>SUM(qty)</code>, <code>SUM(amount)</code>, and every one of S3's 100
-    <code>(category, AVG(amount))</code> pairs. All three stacks agreed exactly on the counts and to
-    within 1e-9 on the averages, and Elasticsearch's own error bounds for the <code>terms</code>
-    aggregation were <code>doc_count_error_upper_bound = 0</code> and
+    data-equivalence gate. Its two halves have different reach, and the difference is stated rather
+    than blurred. <b>All three stacks</b> are compared on the push-down itself — every one of S3's
+    100 <code>(category, cnt, AVG(amount))</code> triples, key by key and value by value: they
+    agreed exactly on the counts and to within 1e-9 on the averages. <b>SoftClient4ES and Trino</b>
+    are additionally compared on <code>COUNT</code>, <code>SUM(id)</code>, <code>SUM(qty)</code> and
+    <code>SUM(amount)</code> over the whole index — the check that the two extraction paths see the
+    same 10,000,000 documents, not merely the same number of them — in the sessions published here
+    ES|QL does not take part in that half, the gate having gained an ES|QL leg for it on 2026-08-17,
+    after these measurements. Elasticsearch's own error bounds
+    for the <code>terms</code> aggregation were <code>doc_count_error_upper_bound = 0</code> and
     <code>sum_other_doc_count = 0</code> — the aggregation is exact at this shard count and bucket
     size, not merely close.
   </div>
 
   <div class="note">
-    <b>Measurement provenance.</b> <i>Drift:</i> runs are blocked by stack, so the first stack's
+    <b>Measurement provenance.</b> Figures come from four sessions, and each table names the one it
+    draws on. The extraction matrix — S1, S1r, S2, S3, S4 — and the JOIN scenarios are the
+    <b>2026-08-13</b> session. The floors, S1m, the ES|QL cells, the drift control, the tuned-Trino
+    arm and S6 are the <b>2026-08-16</b> re-measurement, which also re-ran S1 and S3; where one of
+    its figures is quoted inside a 2026-08-13 table — the ES-wire rows, which it is the first session
+    to measure at the cluster — the table says so. S5 draws on three sessions and its own note
+    attributes each row; section 7 names its own pair. Where a control was measured twice both values
+    appear, the single exception being the S5 8 GB row, for the reason that table's note gives.
+    <i>Drift:</i> runs are blocked by stack, so the first stack's
     block and the second's are separated in time. The first stack's S1 block is therefore re-run at
     the <b>end</b> of the session — 36.86 s at the start against 36.06 s at the end, a −2.2% drift
     against a 0.4% run-to-run spread within the block. The drift is larger than the block's own noise
     and is reported rather than assumed away; it is an order of magnitude smaller than the S1 gap it
-    could bias. <i>Host load:</i> the client runs on the host while the engines run in the Docker VM,
+    could bias. (That session's S1 medians, 36.86 s against 51.81 s, reproduce the published 1.43× as
+    1.41×.) <i>Host load:</i> the client runs on the host while the engines run in the Docker VM,
     so the 1-minute load average is sampled after every run — median 4.0, maximum 9.3 against 16
-    logical cores, i.e. 6.7 cores uncommitted at the worst moment of the session.
+    logical cores, i.e. 6.7 cores uncommitted at the worst moment of the session. <i>Host memory
+    pressure:</i> sampled with every run too, since peak client memory is the axis the two clients
+    differ most on — macOS reported pressure level 1 (normal) on every recorded run, so no figure
+    here was taken from a thrashing host.
   </div>
 
   <div class="note">
@@ -139,7 +166,11 @@
     process's peak physical footprint (<code>ri_lifetime_max_phys_footprint</code>), which is
     immune to the macOS memory compressor. <i>ES wire</i> is the bytes that left Elasticsearch,
     measured from container network counters — sampled at the Elasticsearch container itself, so
-    the figure does not depend on how many containers the engine is made of. Every run asserts the exact expected row count
+    the figure does not depend on how many containers the engine is made of. (Sessions before
+    2026-08-16 sampled the <i>engine</i> container's received bytes instead. The two agree within
+    0.1% on this single-node topology — 2,492 MB against 2,494 for SoftClient4ES, 2,923 against
+    2,926 for Trino — but they are different metrics, so every ES-wire figure below is the
+    Elasticsearch-side one.) Every run asserts the exact expected row count
     before its timing is recorded; a run that returns the wrong number of rows is discarded, not
     reported.
   </div>
@@ -153,7 +184,7 @@
     <thead><tr><th style="width:14mm">ID</th><th>Question it answers</th><th style="width:66mm">Outcome</th></tr></thead>
     <tbody>
       <tr><td class="first">S0</td><td>What does a single-process Python scroll client cost as a reference floor?</td><td>45.3 s to read 10M rows</td></tr>
-      <tr><td class="first">S0p</td><td>And a <i>sliced</i> scroll — 5 slices, 5 processes?</td><td><b>23.3 s</b>, for 3.4× SoftClient4ES's client CPU on S1</td></tr>
+      <tr><td class="first">S0p</td><td>And a <i>sliced</i> scroll — 5 slices, 5 processes?</td><td><b>23.3 s</b>, for 3.9× SoftClient4ES's client CPU on S1</td></tr>
       <tr><td class="first">S1</td><td>Extract 10M rows into a client-side columnar table</td><td><b>1.43× faster</b>, 5.5× less CPU, 5.0× less memory</td></tr>
       <tr><td class="first">S1m</td><td>Extract <b>1,000,000</b> rows — the only scale all three stacks reach</td><td><b>ES|QL 0.51 s</b>, Trino 5.30 s, SoftClient4ES 7.63 s</td></tr>
       <tr><td class="first">S1r</td><td>Extract 10M rows into a <b>pandas / polars DataFrame</b> (what an analyst builds)</td><td><b>42–44% faster</b> on far less CPU and memory</td></tr>
@@ -162,7 +193,7 @@
       <tr><td class="first">S4</td><td>Fetch 100 rows (<code>LIMIT 100</code>)</td><td><span class="chip par">Parity</span> 40 ms vs 57 ms</td></tr>
       <tr><td class="first">S5</td><td>Does the extraction fit in a constrained-memory container?</td><td>Fits <b>2 GB</b>; Trino's stock client needs &gt;8 GB, its fastest client 3 GB</td></tr>
       <tr><td class="first">S6</td><td>How many concurrent extractions fit in an 8 GB budget?</td><td>SoftClient4ES <b>5</b> (50M rows); Trino <b>2</b> with its fastest client, <b>0</b> with its stock one</td></tr>
-      <tr><td class="first">J0–J2</td><td>Cross-index JOIN landed as a DataFrame</td><td>Trino marginally faster on wall (5–9%); SoftClient4ES does 5–20× less client work</td></tr>
+      <tr><td class="first">J0–J2</td><td>Cross-index JOIN landed as a DataFrame</td><td>Trino faster on wall — clean on J2 (8.9%), at the noise floor on J0/J1; SoftClient4ES does 5–20× less client work</td></tr>
       <tr><td class="first">§7</td><td>Do the results survive a <b>5-shard</b> index read by a <b>3-node Trino</b>?</td><td>Yes — S1 gap <b>widens to 1.60×</b>; client cost and pushdown unchanged; Trino's <code>GROUP BY</code> gains 4.7×</td></tr>
     </tbody>
   </table>
@@ -193,9 +224,10 @@
   <div class="outcome">
     <b>Outcome.</b> Scrolling single-threaded is the simplest approach, not the fastest one available
     to a client willing to work for it: a sliced scroll halves the wall clock for almost the same
-    total CPU, and at 23.3 s it is <b>faster than either engine's S1</b> on this index — for 3.4×
-    the client CPU SoftClient4ES spends on S1 (15.4 s against 4.6 s), across five processes,
-    returning nothing you can compute on. A reader
+    total CPU, and at 23.3 s it is <b>faster than either engine's S1</b> on this index — for <b>3.9×
+    the client CPU SoftClient4ES spends on the same ten million rows in the same session</b>
+    (15.4 s against 3.9 s; 3.4× against the 4.6 s of the published S1 block, a different session),
+    across five processes, returning nothing you can compute on. A reader
     who knows Elasticsearch would supply this comparison anyway, so it is measured rather than left
     out. On this single-shard index the gain comes from overlapping request round-trips rather than
     from shard parallelism — the summed CPU barely moves — so a multi-shard index would be expected
@@ -223,10 +255,15 @@ rows = cur.fetchall()                    <span class="c"># list of Python tuples
       <tr><td class="first">Wall median</td><td class="num win">37.1 s <span class="small">(spread 2.1%)</span></td><td class="num">53.1 s <span class="small">(spread 6.2%)</span></td><td class="num"><b>1.43× faster</b></td></tr>
       <tr><td class="first">Client CPU</td><td class="num win">4.6 s</td><td class="num">25.1 s</td><td class="num">5.5× less</td></tr>
       <tr><td class="first">Peak client memory</td><td class="num win">900 MB</td><td class="num">4,472 MB</td><td class="num">5.0× less</td></tr>
-      <tr><td class="first">ES wire</td><td class="num">2,494 MB</td><td class="num">2,926 MB</td><td class="num">—</td></tr>
+      <tr><td class="first">ES wire</td><td class="num">2,492 MB</td><td class="num">2,923 MB</td><td class="num">—</td></tr>
       <tr><td class="first">Rows / columns</td><td class="num">10,000,000 / 8</td><td class="num">10,000,000 / 8</td><td class="num">✓</td></tr>
     </tbody>
   </table>
+  <p class="small">
+    Wall, CPU and memory are the 2026-08-13 session. ES wire is the 2026-08-16 re-measurement, the
+    first to read the counter at the Elasticsearch container; that session's wall medians were
+    36.86 s and 51.81 s.
+  </p>
 
   <figure>
     <div class="fig-head">
@@ -462,12 +499,21 @@ con.execute(same_agg)</pre>
   </table>
   <div class="outcome">
     <b>Outcome — we lose this one, on wall clock, to both.</b> ES|QL is an order of magnitude faster
-    than anything else measured here, and Trino is 1.4× faster than SoftClient4ES. Two things are
+    than anything else measured here, and Trino is 1.4× faster than SoftClient4ES. Three things are
     worth separating from that. The client cost still splits the way the rest of the benchmark
     predicts — 0.19 s of client CPU against Trino's 2.22 s, because the client consumes Arrow batches
-    rather than building a million Python tuples. And the reason ES|QL is fast is not the wire: it
+    rather than building a million Python tuples. The reason ES|QL is fast is not the wire: it
     reads <code>doc_values</code>, columnar on disk, while both engines read <code>_source</code> and
-    pay a JSON parse per document.
+    pay a JSON parse per document. And the loss against Trino is a <b>wire-volume loss whose volume
+    is ours</b>: for the same million rows SoftClient4ES moved <b>495 bytes per row off the cluster
+    against Trino's 291</b>, and against <b>249 on its own ten-million-row run in the same
+    session</b> — at 64.8 MB/s against 67.6, within 4%. At that rate the ~249 MB the result actually
+    needs would take <b>3.8 s</b>; the measured <b>7.63 s</b> is what moving 495 MB costs. The two
+    runs take different paths inside
+    SoftClient4ES (an unbounded <code>SELECT</code> streams through the scroll pager; an explicit
+    <code>LIMIT</code> above the result window takes the bounded one) and only the bounded path
+    shows the doubling. It is filed as a defect on our side and reported here as measured until it
+    is fixed.
   </div>
 
   <h3><span class="tag">ES|QL</span>Elasticsearch's own query language, and where it stops</h3>
@@ -539,13 +585,22 @@ con.execute(same_agg)</pre>
     <caption>Whole result set as one DataFrame</caption>
     <thead><tr><th style="width:28mm">Container cap</th><th>SoftClient4ES</th><th>Trino (stock)</th><th>Trino (connectorx, fastest)</th></tr></thead>
     <tbody>
-      <tr><td class="first num">8 GB</td><td><span class="chip ok">completes</span> 41 s · 1,531 MB</td><td><span class="chip no">killed</span></td><td><span class="chip ok">completes</span> 50 s · 2,908 MB</td></tr>
-      <tr><td class="first num">6 GB</td><td><span class="chip ok">completes</span> 37 s · 1,529 MB</td><td><span class="chip no">killed</span></td><td><span class="chip ok">completes</span> 2,909 MB</td></tr>
-      <tr><td class="first num">4 GB</td><td><span class="chip ok">completes</span> 37 s · 1,535 MB</td><td><span class="chip no">killed</span></td><td><span class="chip ok">completes</span> 2,907 MB</td></tr>
-      <tr><td class="first num">3 GB</td><td><span class="chip ok">completes</span> 37 s · 1,535 MB</td><td><span class="chip no">killed</span></td><td><span class="chip ok">completes</span> 2,910 MB</td></tr>
-      <tr><td class="first num"><b>2 GB</b></td><td class="win"><span class="chip ok">completes</span> <b>37 s · 1,533 MB</b></td><td><span class="chip no">killed</span></td><td><span class="chip no">killed</span></td></tr>
+      <tr><td class="first num">8 GB</td><td><span class="chip ok">completes</span> 36.9 s · 1,528 MB</td><td><span class="chip no">OOM-killed</span></td><td><span class="chip ok">completes</span> 49.7 s · 2,908 MB</td></tr>
+      <tr><td class="first num">6 GB</td><td><span class="chip ok">completes</span> 36.7 s · 1,529 MB</td><td><span class="chip no">OOM-killed</span></td><td><span class="chip ok">completes</span> 49.3 s · 2,909 MB</td></tr>
+      <tr><td class="first num">4 GB</td><td><span class="chip ok">completes</span> 36.1 s · 1,535 MB</td><td><span class="chip no">OOM-killed</span></td><td><span class="chip ok">completes</span> 49.9 s · 2,907 MB</td></tr>
+      <tr><td class="first num">3 GB</td><td><span class="chip ok">completes</span> 37.1 s · 1,535 MB</td><td><span class="chip no">OOM-killed</span></td><td><span class="chip ok">completes</span> 48.8 s · 2,910 MB</td></tr>
+      <tr><td class="first num"><b>2 GB</b></td><td class="win"><span class="chip ok">completes</span> <b>36.4 s · 1,529 MB</b></td><td><span class="chip no">OOM-killed</span></td><td><span class="chip no">OOM-killed</span></td></tr>
     </tbody>
   </table>
+  <p class="small">
+    Provenance: the 8, 4 and 2 GB rows are the 2026-08-16 run; 6 and 3 GB were measured on
+    2026-08-13 and not repeated; the connectorx column is the 2026-08-14 run. "OOM-killed" is the
+    kernel killing the client — exit 137 — in every cell above, verified per cell. One earlier cell
+    resolved differently and is worth recording: on 2026-08-13 the stock client at 8 GB did not
+    reach exit 137, it stalled long enough for Trino to abandon the query server-side. Same
+    conclusion, different mechanism; the 2026-08-16 repeat is a clean kill at every cap, and that is
+    what the table quotes.
+  </p>
 
   <p>
     <b>Streaming, where neither side holds the whole result</b> — SoftClient4ES via
@@ -593,6 +648,7 @@ con.execute(same_agg)</pre>
       <tr><td class="first">SoftClient4ES</td><td class="num">3</td><td class="num">2,730 MB</td><td class="num">3 / 3</td><td class="num">38.0 s</td></tr>
       <tr><td class="first">SoftClient4ES</td><td class="num">4</td><td class="num">2,048 MB</td><td class="num">4 / 4</td><td class="num">39.1 s</td></tr>
       <tr><td class="first"><b>SoftClient4ES</b></td><td class="num"><b>5</b></td><td class="num"><b>1,638 MB</b></td><td class="num win"><b>5 / 5</b></td><td class="num"><b>41.0 s</b></td></tr>
+      <tr><td class="first">Trino — connectorx</td><td class="num">1</td><td class="num">8,192 MB</td><td class="num">1 / 1</td><td class="num">51.7 s</td></tr>
       <tr><td class="first"><b>Trino — connectorx</b></td><td class="num"><b>2</b></td><td class="num"><b>4,096 MB</b></td><td class="num"><b>2 / 2</b></td><td class="num"><b>53.7 s</b></td></tr>
       <tr><td class="first">Trino — connectorx</td><td class="num">3</td><td class="num">2,730 MB</td><td class="num"><span class="chip no">0 / 3</span></td><td class="num">killed</td></tr>
       <tr><td class="first">Trino — stock client</td><td class="num">1</td><td class="num">8,192 MB</td><td class="num"><span class="chip no">0 / 1</span></td><td class="num">killed</td></tr>
@@ -690,7 +746,7 @@ con.execute(same_agg)</pre>
       <tr><td class="first">S1 wall</td><td class="num">37.1 s</td><td class="num win">27.8 s</td><td class="num">53.1 s</td><td class="num">44.7 s</td></tr>
       <tr><td class="first">S1 client CPU</td><td class="num">4.6 s</td><td class="num win">3.8 s</td><td class="num">25.1 s</td><td class="num">24.1 s</td></tr>
       <tr><td class="first">S1 peak client memory</td><td class="num">900 MB</td><td class="num win">919 MB</td><td class="num">4,472 MB</td><td class="num">4,466 MB</td></tr>
-      <tr><td class="first">S1 ES wire</td><td class="num">2,494 MB</td><td class="num">2,553 MB</td><td class="num">2,926 MB</td><td class="num">2,949 MB</td></tr>
+      <tr><td class="first">S1 ES wire</td><td class="num">2,492 MB</td><td class="num">2,553 MB</td><td class="num">2,923 MB</td><td class="num">2,949 MB</td></tr>
       <tr><td class="first">S3 wall (<code>GROUP BY</code>, 100 rows)</td><td class="num">0.04 s</td><td class="num win">0.04 s</td><td class="num">27.0 s</td><td class="num">5.8 s</td></tr>
       <tr><td class="first">S3 ES wire</td><td class="num">0 MB</td><td class="num win">0 MB</td><td class="num">1,394 MB</td><td class="num">1,419 MB</td></tr>
       <tr><td class="first">S5 — 10M rows in a 2 GB container</td><td class="num"><span class="chip ok">completes</span></td><td class="num"><span class="chip ok">completes</span></td><td class="num"><span class="chip no">killed</span></td><td class="num"><span class="chip no">killed</span></td></tr>
@@ -728,6 +784,15 @@ con.execute(same_agg)</pre>
       wall-clock.
     </p>
   </div>
+
+  <p class="small">
+    ES wire for Trino in this section is measured at the Elasticsearch container itself — bytes that
+    left the cluster — because with a three-node Trino the coordinator's own counter sees only a
+    fraction of the scan (721 MB of the 2,949 MB Elasticsearch actually sent). That is why the
+    topology run was repeated with an Elasticsearch-side counter before anything was published. The
+    SoftClient4ES figure is the sidecar's received bytes: it is one hop from the cluster, and the
+    two counters agree within 0.1% wherever both were recorded.
+  </p>
 </section>
 
 <!-- ══════════════════════════ WHERE TRINO IS STRONGER ══════════════════════════ -->
@@ -749,7 +814,10 @@ con.execute(same_agg)</pre>
         join with a <code>GROUP BY</code>, and more efficient at aggregating over a join.</li>
       <li><b>One-million-row extraction</b> — Trino lands 1M rows in 5.30 s against SoftClient4ES's
         7.63 s (S1m), 1.44× faster. The advantage does not survive to ten million rows, where the
-        client cost it pays becomes the constraint, but at this scale it is real.</li>
+        client cost it pays becomes the constraint, but at this scale it is real. The gap is a
+        wire-volume gap and the volume is ours: 495 bytes per row against Trino's 291, on a code
+        path — bounded <code>LIMIT</code> — that moves twice what the same product's unbounded path
+        moves. Filed as a defect, reported here as measured until it is fixed.</li>
       <li><b>Its page size is not tuned in these results, and tuning it helps</b> — raising
         <code>elasticsearch.scroll-size</code> from its default 1000 to 5000 improves Trino's S1
         wall clock from 51.8 s to <b>49.7 s</b> (4%). The headline tables pair product default
@@ -838,7 +906,8 @@ docker compose up -d flight-sql trino
   <p>
     <b>One Elasticsearch format is columnar</b>, and it is measured here rather than glossed over:
     ES|QL's <code>format=arrow</code> returns an Apache Arrow IPC stream (verified on Elasticsearch
-    8.18.3), and below its ceiling it is faster than either engine in this benchmark. That ceiling
+    8.18.3), and below its ceiling it <i>extracts</i> faster than either engine in this benchmark —
+    though not on the pushed-down aggregation, where SoftClient4ES is 5× faster. That ceiling
     is why it appears in three scenarios and not in the rest:
     <code>esql.query.result_truncation_max_size</code> defaults to 10,000 rows and is declared with
     a hard maximum of 1,000,000, so ES|QL cannot return a ten-million-row result at all — and above
@@ -858,7 +927,9 @@ docker compose up -d flight-sql trino
 
   <h3>Fairness rules</h3>
   <ul>
-    <li><b>Same host, same session, same index.</b> Both systems read <code>bench_events_10m</code> back to back.</li>
+    <li><b>Same host, same session, same index.</b> Every stack measured in a scenario —
+      SoftClient4ES, Trino, and ES|QL where it can run — reads <code>bench_events_10m</code> back to
+      back.</li>
     <li><b>Identical container limits:</b> Elasticsearch, the sidecar and Trino each get 4 CPU / 4 GB.
       Elasticsearch heap is pinned at 2 GB; Trino's official image auto-sizes its heap from container memory.</li>
     <li><b>Page-size symmetry:</b> the sidecar's <code>ARROW_BATCH_SIZE=1000</code> equals Trino's
@@ -883,9 +954,16 @@ docker compose up -d flight-sql trino
   <h3>Metrics</h3>
   <ul>
     <li><b>Wall-clock:</b> <code>time.perf_counter()</code> around connect → materialized result.
-      Connection setup is included because it is time the user waits. (The Flight runner dials the
-      sidecar by IP literal to avoid a Go-driver DNS lookup that would otherwise add a fixed
-      per-connection latency; real deployments should reuse connections.)</li>
+      Connection setup is included because it is time the user waits. <b>Every stack dials an IP
+      literal</b>, so no arm resolves a name — a fairness rule that was not obeyed until 2026-08-17,
+      when the Flight runner dialled an address while every Trino route dialled a name. Correcting
+      it was worth <b>0.06 ms</b> (Trino's connect, 1.76 → 1.70 ms): its Python clients resolve
+      through the OS resolver. The Go ADBC driver uses grpc-go's own, which ignores
+      <code>/etc/hosts</code> and costs <b>≈21 ms</b> for a name, with a 5 s DNS timeout behind it
+      (softclient4es-arrow#151). The scale decides whether that matters: 0.06% of a ten-million-row
+      extraction, but more than the whole margin on the 100-row control, which would invert it.
+      Published as a deployment note — with the Go driver, dial an address or reuse the
+      connection.</li>
     <li><b>Client CPU:</b> <code>time.process_time()</code> for the client process — the CPU spent
       turning the wire format into usable values.</li>
     <li><b>Peak client memory:</b> the process's peak physical footprint. On macOS this is the
@@ -893,7 +971,13 @@ docker compose up -d flight-sql trino
       therefore immune to the macOS memory compressor (plain RSS under-reports under memory
       pressure). On Linux the harness falls back to <code>ru_maxrss</code>.</li>
     <li><b>ES wire bytes:</b> read from the container network counters, so a wire-volume difference
-      is measured, not asserted.</li>
+      is measured, not asserted. Since 2026-08-16 the counter is read <b>at the Elasticsearch
+      container</b>, so the figure cannot depend on how many containers the engine is made of.</li>
+    <li><b>Server-side cost is not measured.</b> Neither the Elasticsearch container, the sidecar nor
+      Trino has its CPU or memory recorded per run. Every resource figure in this report is a
+      <b>client</b> figure — an aggregation push-down is credited with the bytes it does not move,
+      not with the cluster CPU it consumes, and the sidecar's own JVM cost sits outside the
+      comparison exactly as Trino's does.</li>
   </ul>
 
   <h3>Interpretation guardrails</h3>
@@ -915,6 +999,21 @@ docker compose up -d flight-sql trino
     <li><b>One flat mapping, no nested fields or arrays.</b> This avoids Trino's documented gaps in
       those types, so the connector is not handicapped; it also means the benchmark says nothing about
       SQL coverage, only about extraction efficiency.</li>
+    <li><b>One column shape: eight columns over five types</b> (<code>long</code>, <code>date</code>,
+      <code>double</code>, <code>integer</code>, <code>keyword</code>)<b>.</b> The client-side cost of a wire format is
+      a function of column count and type mix, and only one point on that curve is measured. Nothing
+      here establishes how the gap moves for two columns or eighty.</li>
+    <li><b>Only the client's half of the cost is measured.</b> A reading of these results as "total
+      system cost" is not supported by anything in this harness.</li>
+    <li><b>Warm cache only, by construction.</b> No cold-cache arm exists, so nothing here describes
+      a first query after a restart.</li>
+    <li><b>The constrained-memory and concurrency scenarios run their client inside a Linux
+      container</b>, while the rest run it natively on macOS. Wall-clock is comparable within each
+      group and only indicative across them, and the peak-memory metric changes with the platform.</li>
+    <li><b>The ten-million-row scenarios are not reproducible on the Community tier.</b> They require
+      a licence whose result quota exceeds 10M. A third party can reproduce every scenario's shape at
+      reduced scale, and S1m/S3/S4 exactly, but cannot independently re-run the headline extraction
+      without one.</li>
     <li><b>Single primary shard in the main results — and that setup favours SoftClient4ES on
       wall-clock.</b> Trino's connector creates one split per shard, so a single-shard index gives
       it one reader and its scan parallelism is not exercised. Note what bounds this: the

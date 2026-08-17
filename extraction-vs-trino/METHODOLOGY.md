@@ -43,7 +43,8 @@ No number is published that did not come out of a run of this harness.
 
 ## 2. Fairness rules
 
-- **Same host, same session, same index.** Both systems read `bench_events_10m` back to back.
+- **Same host, same session, same index.** Every stack measured in a scenario — SoftClient4ES,
+  Trino, and ES|QL where it can run — reads `bench_events_10m` back to back.
 - **Identical container limits:** Elasticsearch, the sidecar, and Trino each get 4 CPU / 4 GB.
   Elasticsearch heap is pinned at 2 GB; Trino's official image auto-sizes its heap from container
   memory.
@@ -71,9 +72,27 @@ No number is published that did not come out of a run of this harness.
 ## 3. Metrics
 
 - **Wall-clock:** `time.perf_counter()` around connect → materialized result. Connection setup is
-  included because it is time the user waits. (The Flight runner dials the sidecar by IP literal to
-  avoid a Go-driver DNS lookup that would otherwise add a fixed per-connection latency; real
-  deployments should reuse connections.)
+  included because it is time the user waits.
+
+  **Every stack dials an IP literal**, so no arm resolves a name. That is a fairness rule, and it
+  was not always obeyed: until 2026-08-17 the Flight runner dialled `127.0.0.1` while every Trino
+  route dialled `localhost`.
+
+  Correcting it was worth **0.06 ms** — Trino's connect moved from 1.76 ms to 1.70 ms — because
+  Trino's Python clients resolve through the OS resolver, which answers from `/etc/hosts` in
+  microseconds. The stock ADBC Flight SQL driver is Go and uses grpc-go's own resolver, which does
+  not consult `/etc/hosts`: a name costs it **≈21 ms** (33.3 ms of connect against 12.7 ms, measured
+  on S4), with a 5 s per-query DNS timeout behind it that produced 5.2 s and 10.1 s outliers in
+  earlier sessions. That cause was established and closed in softclient4es-arrow#151.
+
+  So the two dials are not two settings of one experiment. Dialling names everywhere would place a
+  third-party Go resolver inside the comparison; dialling literals everywhere removes name
+  resolution from every arm. **Where it matters is a question of scale, and the answer differs by
+  scenario:** ≈21 ms is 0.06% of a ten-million-row extraction and changes nothing, while on the S4
+  control — a 100-row fetch — it exceeds the entire margin between the engines and would invert the
+  result. S4 is therefore reported dialled by IP, and this paragraph is what that choice is worth.
+  The driver's cost is published as a deployment note, not as a scenario: with the Go driver, dial
+  an address or reuse the connection.
 - **Client CPU:** `time.process_time()` for the client process — the CPU spent turning the wire
   format into usable values.
 - **Peak client memory:** the process's peak physical footprint. On macOS this is the kernel's
@@ -81,7 +100,18 @@ No number is published that did not come out of a run of this harness.
   macOS memory compressor (plain RSS under-reports under memory pressure). On Linux the harness
   falls back to `ru_maxrss`.
 - **ES wire bytes:** read from the container network counters, so a wire-volume difference is
-  measured, not asserted.
+  measured, not asserted. Since 2026-08-16 the counter is read **at the Elasticsearch container**
+  (bytes it transmitted), so the figure cannot depend on how many containers the engine is made of.
+  Sessions before that date recorded only the *engine* container's received bytes; on this
+  single-node topology the two agree to within 0.1% (verified by re-measuring both in the
+  2026-08-16 session), but they are not the same metric. RESULTS quotes the Elasticsearch-side
+  figure everywhere except one column it names explicitly — the 5-shard SoftClient4ES wire in its
+  section 6, which is the sidecar's received bytes one hop from the cluster.
+- **Server-side cost is not measured.** Neither the Elasticsearch container, the sidecar, nor Trino
+  has its CPU or memory recorded per run. Every resource figure published is a **client** figure.
+  This is a real limitation of the harness rather than a claim: it means an aggregation push-down is
+  credited with the bytes it does not move, not with the cluster CPU it consumes, and the sidecar's
+  own JVM cost sits outside the comparison exactly as Trino's does.
 
 ## 4. Licence disclosure
 
@@ -109,6 +139,22 @@ runs on Community and reproduces every scenario at reduced (`--limit`) scale.
 - **One flat mapping, no nested fields or arrays.** This avoids Trino's documented gaps in those
   types, so the connector is not handicapped; it also means the benchmark says nothing about SQL
   coverage, only about extraction efficiency.
+- **One column shape: eight columns over five types** (`long`, `date`, `double`, `integer`,
+  `keyword`)**.** The client-side cost of a wire format is a
+  function of column count and type mix, and only one point on that curve is measured. Nothing here
+  establishes how the gap moves for two columns or eighty.
+- **Only the client's half of the cost is measured** (see section 3). A reading of these results as
+  "total system cost" is not supported by anything in this harness.
+- **Warm cache only, by construction.** Each scenario's warm-ups run immediately before its measured
+  runs. No cold-cache arm exists, so nothing here describes a first query after a restart.
+- **The constrained-memory and concurrency scenarios (S5, S6) run their client inside a Linux
+  container**, while S0–S4 run it natively on macOS. Wall-clock is therefore comparable *within*
+  each group and only indicative across them; the peak-memory metric also changes accordingly
+  (`ru_maxrss` in the container, physical footprint on the host).
+- **The ten-million-row scenarios are not reproducible on the Community tier.** S1/S2/S5/S6 require a
+  licence whose result quota exceeds 10M (section 4). A third party can reproduce every scenario's
+  shape at reduced scale, and can reproduce S1m/S3/S4 exactly, but cannot independently re-run the
+  headline extraction without one.
 - **Single primary shard in the main results — and that setup favours SoftClient4ES on
   wall-clock.** Trino's connector creates one split per shard, so a single-shard index gives it one
   reader and its scan parallelism is not exercised. Note what bounds this: the *shard* count, not
