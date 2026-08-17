@@ -40,12 +40,12 @@ import time
 import urllib.error
 import urllib.request
 
-from scenarios import (COLUMNS, DEFAULT_INDEX, ESQL_MAX_RESULT_ROWS, ESQL_URL, S1M_ROWS,
-                       check, emit, esql_for, guard_environment, host_load,
-                       memory_pressure, net_bytes, net_delta, peak_footprint_mb,
-                       peak_rss_mb)
+from scenarios import (COLUMNS, DEFAULT_INDEX, ESQL_MAX_RESULT_ROWS, ESQL_URL, HOST, S1M_ROWS,
+                       check, compose_variant, emit, esql_for, guard_environment,
+                       host_load, memory_pressure, net_bytes, net_delta,
+                       peak_footprint_mb, peak_rss_mb)
 
-ES = "http://localhost:9200"
+ES = f"http://{HOST}:9200"
 SCENARIOS = ["S1m", "S3", "S4"]
 ROUTES = ["json", "arrow"]
 SETTING = "esql.query.result_truncation_max_size"
@@ -192,7 +192,7 @@ if __name__ == "__main__":
     # means the evidence cannot be captured on a busy machine. Measured runs below
     # are still guarded.
     if not (a.probe_truncation or a.probe_join):
-        guard_environment()
+        guard_environment(a.scenario)
 
     if a.probe_truncation:
         emit({"stack": "esql", "scenario": "truncation-probe", "index": a.index,

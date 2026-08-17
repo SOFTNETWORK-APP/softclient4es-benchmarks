@@ -32,8 +32,8 @@ import subprocess
 import sys
 import time
 
-from scenarios import (ENGINE_SERVICES, REQUIRED_STACKS, SCENARIOS, stacks_for,
-                       wait_trino_cluster)
+from scenarios import (ENGINE_SERVICES, REQUIRED_STACKS, SCENARIO_PEAK_MB, SCENARIOS,
+                       guard_environment, stacks_for, wait_trino_cluster)
 
 HERE = pathlib.Path(__file__).resolve().parent
 RESULTS = HERE.parent / "results"
@@ -388,6 +388,16 @@ def main():
          "variant": a.variant, "plan": plan}, indent=2))
     if not plan:
         sys.exit("empty plan: the requested scenarios and stacks do not intersect")
+
+    # Host fitness BEFORE the environment is touched. The loop below stops the idle
+    # engine at the top of every block, so a guard firing inside the first runner
+    # left the stack half-down -- twice on 2026-08-17, once with both engines down
+    # because an ES|QL block treats flight AND trino as idle. Check here, against
+    # the heaviest arm the plan will actually reach, and a refusal costs nothing but
+    # the message. The per-run guards stay: this one cannot see a host that degrades
+    # halfway through a two-hour session.
+    heaviest = max((sc for sc, _ in plan), key=lambda sc: SCENARIO_PEAK_MB.get(sc, 0))
+    guard_environment(heaviest)
 
     done = 0
     prefix = f"{a.variant}-" if a.variant else ""

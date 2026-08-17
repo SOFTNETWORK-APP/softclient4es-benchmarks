@@ -16,6 +16,28 @@ import sys
 
 DEFAULT_INDEX = "bench_events_10m"
 
+# ── The host every timed client dials ────────────────────────────────────────
+# An IP LITERAL, never a name, for EVERY stack. This is a fairness rule, not a
+# micro-optimisation, and it was got wrong until 2026-08-17: the Flight runner
+# dialled 127.0.0.1 while every Trino route dialled "localhost", so one arm was
+# configured to resolve a name and the other was not.
+#
+# The reason it mattered is that the two clients resolve names by different
+# machinery. Trino's Python clients go through the OS resolver, which answers
+# "localhost" from /etc/hosts in microseconds -- its whole connect is 1.8 ms. The
+# stock ADBC Flight SQL driver is Go and uses grpc-go's own resolver, which does
+# NOT consult /etc/hosts: a name costs it 33.4 ms of connect against 12.7 ms for
+# a literal, with a 5 s per-query DNS timeout behind it (softclient4es-arrow#151).
+#
+# So "both dial a name" and "both dial a literal" are not two settings of one
+# experiment. The first measures a third-party driver's resolver -- on S4, a
+# 100-row control, it is worth more than the entire margin between the engines.
+# Dialling a literal everywhere removes name resolution from every arm, which is
+# the only configuration in which S4 compares the two engines rather than their
+# clients' DNS paths. The driver defect is a PRODUCT finding, published as a
+# deployment note; `run_flight.py --dial hostname` still measures it on demand.
+HOST = "127.0.0.1"
+
 # ── Engine topology ──────────────────────────────────────────────────────────
 # Every compose service a stack needs. Trino is a real cluster (1 coordinator +
 # 2 workers), so "stop the idle engine" has to stop THREE containers: stopping
@@ -31,7 +53,7 @@ ENGINE_SERVICES = {
 # registering, and a query issued in that window silently runs on fewer nodes than
 # the published topology claims.
 TRINO_WORKERS = 2
-TRINO_URL = "http://localhost:8080"
+TRINO_URL = f"http://{HOST}:8080"
 
 # Host memory fitness, checked by guard_environment().
 #
@@ -44,6 +66,58 @@ TRINO_URL = "http://localhost:8080"
 # Same utilisation, opposite condition. Gate on what macOS itself reports instead.
 MIN_AVAILABLE_GB = 4.0          # free + inactive; inactive is reclaimable without I/O
 VM_PRESSURE_NORMAL = 1          # kern.memorystatus_vm_pressure_level: 1 normal, 2 warn, 4 critical
+
+# ── The floor is sized to the ARM, not to the matrix ─────────────────────────
+# MIN_AVAILABLE_GB is one constant covering every scenario, which means it is
+# simultaneously wrong in both directions: it demanded 4 GB to fetch 100 rows
+# (S4's heaviest client holds 83 MB -- 49x oversized, and on 2026-08-17 it
+# refused a legitimate S4 re-run on a host with 3.3 GB free), while the heaviest
+# arm in the matrix, S1r to a polars DataFrame over SQLAlchemy, peaks at 11 GB
+# and the same 4 GB was cheerfully declared sufficient for it.
+#
+# Heaviest client peak actually recorded per scenario, across BOTH stacks and
+# every route (footprint on macOS, ru_maxrss in the capped container). These are
+# measurements from results/, not estimates -- update them when a route moves.
+SCENARIO_PEAK_MB = {
+    "S0": 27,        # es-raw scroll, counts and discards
+    "S0p": 135,      # 5 sliced scroll processes, summed
+    "S1": 4472,      # trino stock client -> list of tuples
+    "S1m": 474,      # trino stock client, 1M rows
+    "S1r": 11052,    # trino -> polars via SQLAlchemy, the heaviest arm measured
+    "S2": 7779,      # trino -> pandas -> DuckDB
+    "S3": 82,        # flight (aggregation returns 100 rows)
+    "S4": 83,        # flight (LIMIT 100)
+}
+# Slack over the arm's own peak: enough for the interpreter, the driver and the
+# OS to breathe without the process reaching for swap.
+GUARD_HEADROOM_MB = 512
+
+
+def min_available_gb(scenario=None):
+    """Memory floor for this scenario. NEVER above MIN_AVAILABLE_GB.
+
+    The `min()` is the whole safety argument, so do not "simplify" it away: this
+    function can only ever LOWER the requirement for an arm that provably does
+    not need it. It cannot admit a heavy run that the flat floor would have
+    refused, and it therefore cannot retroactively weaken any published figure --
+    every run in results/ was gated at 4.0 GB or, for the light scenarios, at a
+    threshold their own peak clears many times over.
+
+    An unknown scenario falls back to the flat floor, so a new arm is protected
+    by the conservative rule until someone measures it and adds it to the table.
+    """
+    peak = SCENARIO_PEAK_MB.get(scenario)
+    if peak is None:
+        return MIN_AVAILABLE_GB
+    return min(MIN_AVAILABLE_GB, (peak + GUARD_HEADROOM_MB) / 1024.0)
+
+
+# Set by guard_environment() and folded into every run's mem_pressure block, so a
+# reader can see WHICH floor protected a given figure rather than having to infer
+# it from the scenario name. Module state because the guard runs long before the
+# record is built, and threading it through six runners' signatures would buy
+# nothing a comment cannot.
+GUARD_FLOOR_GB = MIN_AVAILABLE_GB
 
 # Host CPU fitness, checked by guard_environment() and RECORDED per run.
 #
@@ -233,7 +307,7 @@ EXPECTED_COLS_TRINO_S1 = len(COLUMNS)
 EXPECTED_MIN_COLS_FLIGHT_S1 = len(COLUMNS)
 
 # ── ES|QL, the third stack ───────────────────────────────────────────────────
-ESQL_URL = "http://localhost:9200/_query"
+ESQL_URL = f"http://{HOST}:9200/_query"
 # ES|QL cannot return more than this, and the ceiling is NOT a licence gate:
 # `esql.query.result_truncation_max_size` is declared
 #   Setting.intSetting("esql.query.result_truncation_max_size", 10000, 1, 1000000,
@@ -301,8 +375,12 @@ def esql_for(scenario, index=DEFAULT_INDEX):
         "not a gap to fill by lowering the row count.")
 
 
-def guard_environment():
+def guard_environment(scenario=None):
     """Refuse to produce numbers from an environment that would misreport them.
+
+    `scenario` sizes the memory floor to the arm about to run (see
+    min_available_gb). Omitting it keeps the flat, conservative 4 GB floor, so a
+    caller that does not know what it is about to measure is never under-protected.
 
     Two ways a run can look fine and be worthless:
 
@@ -327,6 +405,9 @@ def guard_environment():
        CPU seconds are immune, which is precisely why the two must be recorded
        together (see MAX_HOST_LOAD_FACTOR and host_load()).
     """
+    global GUARD_FLOOR_GB
+    floor = GUARD_FLOOR_GB = min_available_gb(scenario)
+
     if not __debug__:
         sys.exit("refusing to run with assertions disabled: the asserts ARE the "
                  "correctness gates (never use -O / PYTHONOPTIMIZE)")
@@ -360,12 +441,17 @@ def guard_environment():
                 "does not, so the run would look ordinary and be wrong.\n"
                 "Free memory (JVMs, browsers, editors) and re-run.")
         avail = mem.get("available_mb")
-        if avail is not None and avail / 1024 < MIN_AVAILABLE_GB:
+        if avail is not None and avail / 1024 < floor:
+            need = SCENARIO_PEAK_MB.get(scenario)
+            sized = (f"{scenario}'s heaviest measured client holds {need} MB"
+                     if need is not None else
+                     "the heaviest arm in the matrix holds ~11 GB")
             sys.exit(
                 f"refusing to measure: only {avail / 1024:.1f} GB of reclaimable memory "
-                f"(free + inactive), below the {MIN_AVAILABLE_GB:.1f} GB floor.\n"
-                "The client is measured ON THE HOST and the heaviest arm holds several "
-                "GB; below this floor the run pages and its timings are fiction.\n"
+                f"(free + inactive), below the {floor:.2f} GB floor for "
+                f"{scenario or 'this run'}.\n"
+                f"The client is measured ON THE HOST and {sized}; below this floor the "
+                "run pages and its timings are fiction.\n"
                 "Free memory and re-run.")
 
     # Host CPU fitness. The client is measured on the host while the engines run in
@@ -454,11 +540,17 @@ def memory_pressure():
     swap runs the same S1 in 70 s or 87 s. Recording swap and free-memory state
     alongside each run lets a reader judge which sessions' wall numbers were
     taken under duress instead of trusting run-to-run spread to reveal it.
+    Also carries `guard_floor_gb`, the floor guard_environment() actually applied
+    to this run. It lives here rather than at the top level because it is part of
+    the same question -- what the memory situation was, and what was demanded of
+    it -- and because a floor that varies by scenario is unreadable unless each
+    figure says which one protected it.
+
     Best-effort; None where unavailable.
     """
     if sys.platform != "darwin":
         return None
-    out = {}
+    out = {"guard_floor_gb": GUARD_FLOOR_GB}
     try:
         r = subprocess.run(["sysctl", "-n", "vm.swapusage"],
                            capture_output=True, text=True, timeout=10)
