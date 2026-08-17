@@ -36,6 +36,7 @@ run rather than issuing it itself.
 """
 import argparse
 import json
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -193,6 +194,17 @@ if __name__ == "__main__":
     # are still guarded.
     if not (a.probe_truncation or a.probe_join):
         guard_environment(a.scenario)
+
+    # `--probe-join` takes TWO index names, so `--probe-join --out f.json` silently
+    # binds LEFT="--out". Measured 2026-08-18: that produced a probe recording
+    # `outcome: rejected, status 400` -- which reads exactly like the finding this
+    # probe exists to capture (ES|QL refusing a cross-index join) while actually
+    # saying "invalid index name [-out]", and consumed --out so nothing was written.
+    # An artifact that mimics the expected result is worse than a missing one.
+    if a.probe_join and any(x.startswith("-") for x in a.probe_join):
+        sys.exit(f"--probe-join takes two INDEX NAMES, got {a.probe_join!r}. "
+                 "A leading '-' means a flag was swallowed as an index; put "
+                 "--probe-join LEFT RIGHT before any other option.")
 
     if a.probe_truncation:
         emit({"stack": "esql", "scenario": "truncation-probe", "index": a.index,

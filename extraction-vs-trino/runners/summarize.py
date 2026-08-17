@@ -68,7 +68,12 @@ def main():
         sys.exit(f"no such session dir: {session}")
 
     groups = collections.defaultdict(list)
-    for f in sorted(session.glob("*run*.json")):
+    # `*-run<N>.json`, NOT `*run*.json`. The loose glob matched
+    # esql-truncation-probe.json -- "t-run-cation" contains "run" -- and ingested a
+    # PROBE as a measured run. It crashed on the missing `rows` key only because the
+    # probe happens to call its count `rows_returned`; with a matching name it would
+    # have merged silently into a scenario's medians instead. Measured 2026-08-18.
+    for f in sorted(session.glob("*-run[0-9]*.json")):
         r = json.loads(f.read_text())
         # variant is part of the key: a 4-shard S1b run must never merge into S1's
         # headline medians just because it shares a scenario name.

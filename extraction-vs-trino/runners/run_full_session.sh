@@ -92,5 +92,11 @@ run $PY runners/probe_connect.py --repeat 30 --out "$SESSION/connect-probe.json"
 run $O --scenarios S1 --drift-scenarios S1 --stacks flight
 
 say "matrix complete -- summarizing"
-run $PY runners/summarize.py "$SESSION"
+# summarize.py PRINTS the report; it does not write it. run() sends stdout to the
+# log, so redirect explicitly or the session ends with no summary.md.
+if $PY runners/summarize.py "$SESSION" > "$SESSION/summary.md" 2>>"$LOG"; then
+  say "wrote $SESSION/summary.md"
+else
+  say "FAILED: summarize"; rm -f "$SESSION/summary.md"
+fi
 say "DONE  $SESSION"
