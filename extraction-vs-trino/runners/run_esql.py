@@ -41,9 +41,9 @@ import urllib.error
 import urllib.request
 
 from scenarios import (COLUMNS, DEFAULT_INDEX, ESQL_MAX_RESULT_ROWS, ESQL_URL, S1M_ROWS,
-                       check, emit, esql_for, guard_environment, host_load,
-                       memory_pressure, net_bytes, net_delta, peak_footprint_mb,
-                       peak_rss_mb)
+                       check, compose_variant, emit, esql_for, guard_environment,
+                       host_load, memory_pressure, net_bytes, net_delta,
+                       peak_footprint_mb, peak_rss_mb)
 
 ES = "http://localhost:9200"
 SCENARIOS = ["S1m", "S3", "S4"]
