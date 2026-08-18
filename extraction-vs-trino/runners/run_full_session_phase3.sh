@@ -54,6 +54,13 @@ run $PY runners/orchestrate.py --session "$SESSION" --stop-idle-engine \
         --index bench_events_10m_s5 --variant 5shard \
         --stacks flight trino --scenarios S1 S3
 
+# Evidence that the parallelism under test was actually exercised -- one split per
+# shard, spread over the workers. It has to be captured LIVE: system.runtime.tasks
+# drops a query's rows the moment it finishes, so this cannot be recovered from the
+# session afterwards, and RESULTS would be left asserting it from an older run.
+run $PY runners/probe_trino_splits.py --index bench_events_10m_s5 \
+        --out "$SESSION/trino-splits-probe.json"
+
 say "restoring the single-shard topology"
 run $PY generator/select_topology.py --index bench_events_10m
 

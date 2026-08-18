@@ -44,7 +44,12 @@ No number is published that did not come out of a run of this harness.
 ## 2. Fairness rules
 
 - **Same host, same session, same index.** Every stack measured in a scenario — SoftClient4ES,
-  Trino, and ES|QL where it can run — reads `bench_events_10m` back to back.
+  Trino, and ES|QL where it can run — reads `bench_events_10m` back to back. The rule is honoured at
+  the level of the whole matrix, not just the scenario: **the entire single-shard matrix is one
+  session** (`run_full_session.sh` — one gate, one host state, 165 measured runs). Three scenarios
+  cannot join it because each rebuilds its own container topology — S5 caps the client container,
+  S6 launches N of them, and the joins use a second index — so each is its own session, run the
+  same night on the same host and the same image, and RESULTS names the session behind every table.
 - **Identical container limits:** Elasticsearch, the sidecar, and Trino each get 4 CPU / 4 GB.
   Elasticsearch heap is pinned at 2 GB; Trino's official image auto-sizes its heap from container
   memory.
@@ -81,18 +86,22 @@ No number is published that did not come out of a run of this harness.
   Correcting it was worth **0.06 ms** — Trino's connect moved from 1.76 ms to 1.70 ms — because
   Trino's Python clients resolve through the OS resolver, which answers from `/etc/hosts` in
   microseconds. The stock ADBC Flight SQL driver is Go and uses grpc-go's own resolver, which does
-  not consult `/etc/hosts`: a name costs it **≈21 ms** (33.3 ms of connect against 12.7 ms, measured
-  on S4), with a 5 s per-query DNS timeout behind it that produced 5.2 s and 10.1 s outliers in
-  earlier sessions. That cause was established and closed in softclient4es-arrow#151.
+  not consult `/etc/hosts`. A four-layer connect probe (`probe_connect.py`, artifact
+  `connect-probe.json`) separates the cost by layer: bare TCP 0.07 ms, the Flight C++ layer 1.6 ms,
+  the Go ADBC layer dialling an IP 2.8 ms, and **the same layer dialling a name 18.1 ms** — a ≈15 ms
+  resolver tax that belongs to the driver, not to the protocol. Behind it sits a 5 s per-query DNS
+  timeout that produced 5.2 s and 10.1 s outliers in earlier sessions; that cause was established
+  and closed in softclient4es-arrow#151.
 
   So the two dials are not two settings of one experiment. Dialling names everywhere would place a
   third-party Go resolver inside the comparison; dialling literals everywhere removes name
   resolution from every arm. **Where it matters is a question of scale, and the answer differs by
-  scenario:** ≈21 ms is 0.06% of a ten-million-row extraction and changes nothing, while on the S4
-  control — a 100-row fetch — it exceeds the entire margin between the engines and would invert the
-  result. S4 is therefore reported dialled by IP, and this paragraph is what that choice is worth.
-  The driver's cost is published as a deployment note, not as a scenario: with the Go driver, dial
-  an address or reuse the connection.
+  scenario:** ≈15 ms is 0.04% of a ten-million-row extraction and changes nothing, while on the S4
+  control — a 100-row fetch — it is the whole result. Both dials are therefore measured and both are
+  published: dialled by IP, S4 is 0.038 s against Trino's 0.056 s; dialled by name it is **0.056 s,
+  exactly Trino's**. The name lookup does not invert that control, it **erases** it, and RESULTS
+  says so where the control appears. The driver's cost is published as a deployment note, not as a
+  scenario: with the Go driver, dial an address or reuse the connection.
 - **Client CPU:** `time.process_time()` for the client process — the CPU spent turning the wire
   format into usable values.
 - **Peak client memory:** the process's peak physical footprint. On macOS this is the kernel's
@@ -104,9 +113,9 @@ No number is published that did not come out of a run of this harness.
   (bytes it transmitted), so the figure cannot depend on how many containers the engine is made of.
   Sessions before that date recorded only the *engine* container's received bytes; on this
   single-node topology the two agree to within 0.1% (verified by re-measuring both in the
-  2026-08-16 session), but they are not the same metric. RESULTS quotes the Elasticsearch-side
-  figure everywhere except one column it names explicitly — the 5-shard SoftClient4ES wire in its
-  section 6, which is the sidecar's received bytes one hop from the cluster.
+  2026-08-16 session), but they are not the same metric. **Every ES-wire figure RESULTS publishes is
+  now the Elasticsearch-side one**, section 6 included; the sidecar-side exception the earlier
+  edition had to name no longer exists.
 - **Server-side cost is not measured.** Neither the Elasticsearch container, the sidecar, nor Trino
   has its CPU or memory recorded per run. Every resource figure published is a **client** figure.
   This is a real limitation of the harness rather than a claim: it means an aggregation push-down is
@@ -130,7 +139,7 @@ runs on Community and reproduces every scenario at reduced (`--limit`) scale.
   predicate pushdown only and scans all rows. S3 is never a wire-format result.
 - **S4** is the control: with a small result the wire format stops mattering, and near-parity there
   is a sign the benchmark is honest, not a weakness.
-- **Where Trino is stronger** is published alongside the results (RESULTS section 6).
+- **Where Trino is stronger** is published alongside the results (RESULTS section 7).
 
 ## 6. Known limitations
 
@@ -163,11 +172,13 @@ runs on Community and reproduces every scenario at reduced (`--limit`) scale.
   This is no longer left as a caveat. **RESULTS section 6 publishes the measured sensitivity run:**
   the same corpus regenerated from the same seed into a 5-shard index, read by a real 3-node Trino
   cluster (dedicated coordinator + 2 workers, `node-scheduler.include-coordinator=false`) given
-  6 CPU / 8 GB against SoftClient4ES's 4 CPU / 4 GB. Trino's plan used 5 scan splits across its two
-  workers, read back from `system.runtime.tasks`. Both engines get faster; the S1 gap widens from
-  1.43× to 1.60×; client CPU, peak client memory and the 2 GB container threshold do not move; the
-  `GROUP BY` still moves 0 bytes against 1.4 GB. Trino's own largest gain in the whole benchmark
-  appears there too — its aggregation wall-clock improves 4.7× — and is published as such.
+  6 CPU / 8 GB against SoftClient4ES's 4 CPU / 4 GB. Trino's plan used 5 scan splits — 3 on one
+  worker, 2 on the other, none on the coordinator — captured live from `system.runtime.tasks` by
+  `probe_trino_splits.py`, because those rows are dropped the moment a query finishes and cannot be
+  recovered afterwards. Both engines get faster; the S1 gap widens from **1.46× to 1.51×**; client
+  CPU, peak client memory (±0.02%) and the 2 GB container threshold do not move; the `GROUP BY`
+  still moves 24 KB against 1.4 GB. Trino's own largest gain in the whole benchmark appears there
+  too — its aggregation wall-clock improves **4.3×** — and is published as such.
 
   The distinction the run establishes: **wall-clock is topology-sensitive; client cost and pushdown
   are not.** The client is one process consuming one wire format however large the cluster, and the
