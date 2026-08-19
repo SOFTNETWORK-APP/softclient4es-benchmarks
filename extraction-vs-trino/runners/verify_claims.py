@@ -19,6 +19,14 @@ WHY THIS EXISTS, in two failures it would have caught.
    5-shard CPU. A token that exists somewhere proves nothing about the cell it sits in.
    `compare_report_cells()` therefore matches a LABEL to its value, never a bare number.
 
+3. A DOCUMENT THAT AGREES WITH ITSELF ABOUT THE WRONG BUILD. Cells are matched by
+   label, so the version string is invisible to them: the PDF footer credited all 21
+   pages to `0.2.5` long after every figure had been re-measured on `0.2.5.1` -- the
+   exact build whose defect forced the re-measurement. `verify_image_provenance()`
+   reads the tag and digest from the session's own `sidecar-image.txt` and requires
+   every site that names a build to name that one, plus flags any version string not
+   on an explicit historical allowlist.
+
 Exit code is 1 if any claim fails, so a session can gate a publish.
 """
 import argparse
@@ -205,6 +213,141 @@ CELL_PAIRS = [
 ]
 
 
+# ── image provenance ────────────────────────────────────────────────────────
+# The cells above are checked by LABEL, which means the version string is invisible
+# to them: every figure can agree perfectly while the page footer attributes them to
+# a different build. That is not hypothetical -- it shipped. `report/build.mjs` kept
+# "measured on the released 0.2.5 build" in the running footer of all 21 pages and in
+# the PDF's /Subject metadata after everything else moved to 0.2.5.1, so the artifact
+# contradicted its own cover and credited the numbers to the build whose defect caused
+# the republication. Nothing in the harness could see it: not the figure checks (the
+# figures were right), not the cell diff (no label), not a token scan.
+#
+# So the tag and digest become checked facts with a single source of truth -- the
+# CURRENT session's own `sidecar-image.txt`, written by the harness from the running
+# container, not typed by anyone.
+IMAGE_SITES = [
+    (".env.example", r"^SIDECAR_TAG=(\S+)\s*$", "the tag a fresh clone measures"),
+    ("docker-compose.yml", r"arrow-flight-sql:\$\{SIDECAR_TAG:-([^}]+)\}",
+     "the compose default when no .env is present"),
+    ("RESULTS.md", r"arrow-flight-sql:([\d.]+)`", "RESULTS section 1, environment"),
+    ("FINDINGS.md", r"measured on the released `([\d.]+)` build",
+     "FINDINGS, what the fixes were measured on"),
+    ("report/report.html", r"arrow-flight-sql:([\d.]+)</code>", "report body, environment"),
+    ("report/cover.html", r"<dd>([\d.]+)<small>Arrow Flight SQL sidecar</small>",
+     "report cover"),
+    ("report/build.mjs", r"measured on the released ([\d.]+) build</span>",
+     "PDF running footer, every page"),
+    ("report/build.mjs", r"measured on the released ([\d.]+) build',",
+     "PDF /Subject metadata"),
+]
+# Sites that print the image digest (truncated for the page, so compare the prefix).
+DIGEST_SITES = [
+    ("RESULTS.md", r"digest `sha256:([0-9a-f]+)"),
+    ("report/report.html", r"digest <code>sha256:([0-9a-f]+)"),
+]
+# Version strings that are DELIBERATELY not the measured one. Each is a historical
+# statement, and each must stay readable as history -- keyed by a phrase from the line
+# rather than a line number, so an edit that changes the meaning breaks the key.
+VERSION_ALLOWLIST = [
+    ("docker-compose.yml", "is NOT a cosmetic bump",
+     "names the old tag on purpose, to say why it must not be used"),
+    ("docker-compose.yml", "arrow#141, fixed in 0.2.5-SNAPSHOT",
+     "when a fix landed, not what was measured"),
+    ("docker-compose.yml", "bring-up on 0.2.5 and has NOT been repeated",
+     "an honest attribution of a check to the build that ran it"),
+    ("runners/orchestrate.py", "0.2.5-SNAPSHOT was republished",
+     "the incident that made provenance recording necessary"),
+    ("runners/orchestrate_concurrent.py", "the report's \"every figure was measured on image 0.2.5",
+     "quotes the sentence that turned out to be unverifiable"),
+    ("runners/orchestrate_join.py", "the 0.2.5-SNAPSHOT tag was republished",
+     "same incident"),
+    ("runners/run_join.py", "the 0.2.5-SNAPSHOT tag was",
+     "same incident"),
+    ("results/README.md", "measured **sidecar 0.2.5**",
+     "the RETIRED sessions really were measured on it"),
+    ("results/README.md", "on 0.2.5 the Flight schema probe",
+     "explains why a retired figure legitimately differs"),
+]
+VERSION_TOKEN = re.compile(r"\b0\.2\.\d+(?:\.\d+)?(?:-SNAPSHOT)?\b")
+SCAN_SUFFIXES = {".md", ".py", ".yml", ".yaml", ".html", ".mjs", ".sh", ".example", ".txt"}
+
+
+def session_image(session):
+    """Tag and digest of the image the session actually ran, from the harness record."""
+    rec = HERE / "results" / session / "sidecar-image.txt"
+    if not rec.exists():
+        return None, None
+    text = rec.read_text()
+    tag = re.search(r"^config_image=\S+:(\S+)$", text, re.M)
+    dig = re.search(r"^image_id=sha256:([0-9a-f]+)$", text, re.M)
+    return (tag.group(1) if tag else None), (dig.group(1) if dig else None)
+
+
+def verify_image_provenance(session):
+    """Every place that names the measured build must name the one that ran."""
+    print("\n=== image provenance: every version string vs the session's own record ===")
+    tag, digest = session_image(session)
+    if not tag or not digest:
+        print(f"  FAIL no readable results/{session}/sidecar-image.txt — "
+              "provenance cannot be checked, so it is not assumed")
+        return False
+    print(f"  session ran {tag} (sha256:{digest[:12]}…), per the harness's own record")
+    bad = 0
+    for path, pattern, why in IMAGE_SITES:
+        text = (HERE / path).read_text()
+        m = re.search(pattern, text, re.M)
+        if not m:
+            print(f"  ANCHOR LOST {path} — {why} (pattern no longer matches; fix the "
+                  "pattern, do not drop the site)")
+            bad += 1
+        elif m.group(1) != tag:
+            print(f"  MISMATCH {path} says {m.group(1)}, session ran {tag} — {why}")
+            bad += 1
+    for path, pattern in DIGEST_SITES:
+        m = re.search(pattern, (HERE / path).read_text())
+        if not m:
+            print(f"  ANCHOR LOST {path} digest")
+            bad += 1
+        elif not digest.startswith(m.group(1)):
+            print(f"  MISMATCH {path} digest {m.group(1)}… is not a prefix of {digest}")
+            bad += 1
+    # The other half: a version string nobody listed. Catches the next footer.
+    allowed = {(p, needle) for p, needle, _ in VERSION_ALLOWLIST}
+    strays = 0
+    for f in sorted(HERE.rglob("*")):
+        if not f.is_file() or f.suffix not in SCAN_SUFFIXES:
+            continue
+        rel = f.relative_to(HERE).as_posix()
+        # What is deliberately NOT scanned, and why:
+        #   .venv / .git      third-party and VCS internals -- polars ships a "0.2.5"
+        #                     in its own version table, which says nothing about us
+        #   results/*         a measured session RECORDS the image it ran; the retired
+        #                     ones legitimately name 0.2.5, and that is the evidence,
+        #                     not a claim (results/README.md IS scanned -- it makes
+        #                     claims about those sessions)
+        #   this file         it is the registry: the allowlist and the docstring name
+        #                     old versions by construction
+        if rel.startswith((".venv/", ".git/", "node_modules/")):
+            continue
+        if rel.startswith("results/") and rel != "results/README.md":
+            continue
+        if f.resolve() == pathlib.Path(__file__).resolve():
+            continue
+        for n, line in enumerate(f.read_text(errors="ignore").splitlines(), 1):
+            for tok in VERSION_TOKEN.findall(line):
+                if tok == tag or any(rel == p and needle in line
+                                     for p, needle in allowed):
+                    continue
+                print(f"  STRAY {rel}:{n} names {tok}, not the measured {tag} — "
+                      "allowlist it with a reason if it is deliberate history")
+                strays += 1
+    total = len(IMAGE_SITES) + len(DIGEST_SITES)
+    print(f"  {total - bad}/{total} provenance sites agree; {strays} unlisted "
+          "version strings")
+    return bad == 0 and strays == 0
+
+
 def compare_report_cells(results_md, report_html):
     """Label-matched diff. A value is compared to the value under the SAME label."""
     print("\n=== report vs RESULTS, cell by cell ===")
@@ -235,12 +378,13 @@ def main():
     verify_joins(a.session, results_md, chk)
     ok_claims = chk.report("published figures re-derived from artifacts")
     ok_cells = compare_report_cells(results_md, report_html)
+    ok_image = verify_image_provenance(a.session)
 
-    if ok_claims and ok_cells:
+    if ok_claims and ok_cells and ok_image:
         print("\nALL CHECKS PASS")
         return 0
-    print("\nFAILED — a published figure is not supported by the artifacts, or the "
-          "report and RESULTS disagree.")
+    print("\nFAILED — a published figure is not supported by the artifacts, the "
+          "report and RESULTS disagree, or a document names the wrong build.")
     return 1
 
 

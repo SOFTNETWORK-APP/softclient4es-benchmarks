@@ -301,7 +301,7 @@ def stacks_for(scenario):
 # statement schema from row keys, not from the SQL projection), so SoftClient4ES
 # moved MORE bytes per row than the SQL asked for and this gate was a >=. That
 # metadata was removed in core#226 (_index/_score/_sort deleted, _id opt-in and
-# off by default); the released 0.2.5 image measured here returns 8 of 8, which
+# off by default); the released 0.2.5.1 image measured here returns 8 of 8, which
 # is what RESULTS S1 publishes. `extra_cols` is still recorded per run so a
 # regression shows up in the data rather than in nobody's memory.
 EXPECTED_COLS_TRINO_S1 = len(COLUMNS)
@@ -324,7 +324,7 @@ ESQL_URL = f"http://{HOST}:9200/_query"
 ESQL_MAX_RESULT_ROWS = 1_000_000
 # The S1m size. Deliberately equal to ES|QL's hard ceiling: the one scale at which
 # all three stacks can be compared like for like, and the boundary a reader wants
-# to see. Verified against the released 0.2.5 sidecar at bring-up (LIMIT 1000000
+# to see. Verified against the released 0.2.5.1 sidecar in every session (LIMIT 1000000
 # returns 1,000,000 rows over Flight SQL, so the explicit-LIMIT path is not the
 # bounded <=10k one). ⚠️ A predicate was considered and rejected: the generator's
 # ids are random draws, not a permutation (10,000,000 docs, 9,931,188 distinct),

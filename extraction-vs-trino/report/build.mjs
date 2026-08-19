@@ -62,7 +62,7 @@ const footerTemplate = `
   <div style="display:flex;justify-content:space-between;align-items:center;
               border-top:0.5px solid #e2e8f0;padding-top:4px;">
     <span>softclient4es.dev &nbsp;·&nbsp; Benchmark report &nbsp;·&nbsp; August 2026
-          &nbsp;·&nbsp; measured on the released 0.2.5 build</span>
+          &nbsp;·&nbsp; measured on the released 0.2.5.1 build</span>
     <span><span class="pageNumber"></span> / <span class="totalPages"></span></span>
   </div>
 </div>`;
@@ -230,7 +230,7 @@ w.add_metadata({
     '/Title': 'SoftClient4ES vs Trino — Elasticsearch extraction benchmark',
     '/Author': 'SOFTNETWORK',
     '/Subject': 'Extracting 10M rows out of Elasticsearch: Arrow Flight SQL vs the Trino '
-                'Elasticsearch connector, measured on the released 0.2.5 build',
+                'Elasticsearch connector, measured on the released 0.2.5.1 build',
     '/Keywords': 'Elasticsearch, Arrow Flight SQL, Trino, benchmark, SoftClient4ES',
     '/Creator': 'softclient4es.dev',
 })

@@ -142,10 +142,14 @@ services:
       #   ARROW_BATCH_SIZE=5000 docker compose up -d flight-sql   # our tuned arm
       #   run_trino.py --catalog elasticsearch_tuned              # their tuned arm
       #
-      # Verified on the released 0.2.5 image that values above 4,032 work (arrow#143's
-      # non-growing-vector cap is fixed in it): 9,000 rows came back in 2 batches at
-      # ARROW_BATCH_SIZE=5000. Without that fix the tuned arm could only have tuned
-      # Trino, so this is what makes the symmetric comparison possible at all.
+      # Values above 4,032 work (arrow#143's non-growing-vector cap is fixed): 9,000
+      # rows came back in 2 batches at ARROW_BATCH_SIZE=5000. ⚠️ That check was run at
+      # bring-up on 0.2.5 and has NOT been repeated on the published 0.2.5.1 image --
+      # no tuned-sidecar arm exists in the current session, whose only tuned arm is
+      # Trino's. The fix is present in both images, so the statement holds; it is
+      # attributed to the build that actually measured it rather than upgraded to the
+      # published one. Without that fix the tuned arm could only have tuned Trino, so
+      # this is what makes the symmetric comparison possible at all.
       - ARROW_BATCH_SIZE=${ARROW_BATCH_SIZE:-1000}
       #
       # NO licence env is wired here on purpose: as committed, this service runs on
