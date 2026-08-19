@@ -1,0 +1,89 @@
+[
+  {
+    "engine": "trino",
+    "route": "connectorx",
+    "n": 1,
+    "cap_mb": 8192,
+    "budget_gib": 8.0,
+    "completed": 1,
+    "total_wall_s": 49.84738045799895,
+    "runs": [
+      {
+        "idx": 0,
+        "route": "connectorx",
+        "outcome": "completed",
+        "exit_code": 0,
+        "wall_s": 49.60161606499969,
+        "peak_rss_mb": 2909.12109375,
+        "rows": 10000000
+      }
+    ]
+  },
+  {
+    "engine": "trino",
+    "route": "connectorx",
+    "n": 2,
+    "cap_mb": 4096,
+    "budget_gib": 8.0,
+    "completed": 2,
+    "total_wall_s": 50.96749783300038,
+    "runs": [
+      {
+        "idx": 0,
+        "route": "connectorx",
+        "outcome": "completed",
+        "exit_code": 0,
+        "wall_s": 50.67160994000005,
+        "peak_rss_mb": 2911.81640625,
+        "rows": 10000000
+      },
+      {
+        "idx": 1,
+        "route": "connectorx",
+        "outcome": "completed",
+        "exit_code": 0,
+        "wall_s": 50.73122514699935,
+        "peak_rss_mb": 2911.2890625,
+        "rows": 10000000
+      }
+    ]
+  },
+  {
+    "engine": "trino",
+    "route": "connectorx",
+    "n": 3,
+    "cap_mb": 2730,
+    "budget_gib": 8.0,
+    "completed": 0,
+    "total_wall_s": 49.46972687500238,
+    "runs": [
+      {
+        "idx": 0,
+        "route": "connectorx",
+        "outcome": "OOM-KILLED",
+        "exit_code": 137,
+        "wall_s": 48.30717708299926,
+        "peak_rss_mb": null,
+        "rows": null
+      },
+      {
+        "idx": 1,
+        "route": "connectorx",
+        "outcome": "OOM-KILLED",
+        "exit_code": 137,
+        "wall_s": 49.469246541004395,
+        "peak_rss_mb": null,
+        "rows": null
+      },
+      {
+        "idx": 2,
+        "route": "connectorx",
+        "outcome": "OOM-KILLED",
+        "exit_code": 137,
+        "wall_s": 49.444752999996126,
+        "peak_rss_mb": null,
+        "rows": null
+      }
+    ]
+  }
+]

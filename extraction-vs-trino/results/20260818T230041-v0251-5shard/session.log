@@ -1,0 +1,82 @@
+
+=== 02:12:15 === phase 3 -- 5-shard sensitivity, session results/20260818T230041-v0251-5shard
+
+=== 02:12:15 === .venv/bin/python generator/select_topology.py --index bench_events_10m_s5
+opened  bench_events_10m_s5
+closed  bench_events_10m
+
+resident topology -> bench_events_10m_s5 (5 shard(s))
+
+  closed  bench_events_10m                        -             - docs
+  OPEN    bench_events_10m_s5            5 shard(s)      10000000 docs
+
+=== 02:12:16 === .venv/bin/python runners/verify_equivalence.py --index bench_events_10m_s5 --out results/20260818T230041-v0251-5shard/equivalence-gate.json
+/Users/smanciot/git/softnetwork-app/softclient4es-benchmarks/extraction-vs-trino/.venv/lib/python3.12/site-packages/adbc_driver_manager/dbapi.py:369: Warning: Cannot disable autocommit; conn will not be DB-API 2.0 compliant
+  warnings.warn(
+ok   count: flight=10000000.0 trino=10000000
+ok   count: flight=10000000.0 esql=10000000
+ok   sum_id: flight=49999995000000.0 trino=49999995000000
+ok   sum_id: flight=49999995000000.0 esql=49999995000000
+ok   sum_qty: flight=100022935.0 trino=100022935
+ok   sum_qty: flight=100022935.0 esql=100022935
+ok   sum_amount: flight=5006090520.54 trino=5006090520.540035
+ok   sum_amount: flight=5006090520.54 esql=5006090520.54
+S3 groups flight vs trino: 100 groups identical (counts exact, averages within 1e-09)
+S3 groups flight vs esql: 100 groups identical (counts exact, averages within 1e-09)
+ok   terms exactness: doc_count_error_upper_bound=0, sum_other_doc_count=0 (size=65536, 100 buckets)
+
+All equivalence checks passed: every stack returns the same data.
+
+=== 02:13:07 === .venv/bin/python runners/orchestrate.py --session results/20260818T230041-v0251-5shard --stop-idle-engine --index bench_events_10m_s5 --variant 5shard --stacks flight trino --scenarios S1 S3
+session: results/20260818T230041-v0251-5shard
+[flight S1] warmup 1/2
+[flight S1] warmup 2/2
+[flight S1] run 1/5
+[flight S1] run 2/5
+[flight S1] run 3/5
+[flight S1] run 4/5
+[flight S1] run 5/5
+Trino cluster ready: 3 active nodes (2 workers: 6ef3f8ddf30a, f3f2a59b9ea5)
+[trino S1] warmup 1/2
+[trino S1] warmup 2/2
+[trino S1] run 1/5
+[trino S1] run 2/5
+[trino S1] run 3/5
+[trino S1] run 4/5
+[trino S1] run 5/5
+[flight S3] warmup 1/2
+[flight S3] warmup 2/2
+[flight S3] run 1/5
+[flight S3] run 2/5
+[flight S3] run 3/5
+[flight S3] run 4/5
+[flight S3] run 5/5
+Trino cluster ready: 3 active nodes (2 workers: 6ef3f8ddf30a, f3f2a59b9ea5)
+[trino S3] warmup 1/2
+[trino S3] warmup 2/2
+[trino S3] run 1/5
+[trino S3] run 2/5
+[trino S3] run 3/5
+[trino S3] run 4/5
+[trino S3] run 5/5
+
+completed 20 measured run(s)
+session: results/20260818T230041-v0251-5shard
+
+=== 02:23:55 === .venv/bin/python runners/probe_trino_splits.py --index bench_events_10m_s5 --out results/20260818T230041-v0251-5shard/trino-splits-probe.json
+{"stack": "trino", "scenario": "splits-probe", "ts": "2026-08-19T00:23:55Z", "index": "bench_events_10m_s5", "query": "SELECT id, event_ts, amount, qty, status, country, category, name FROM bench_events_10m_s5", "query_id": "20260819_002355_00008_j3s43", "nodes": [{"node_id": "807d6d725410", "coordinator": true, "state": "active"}, {"node_id": "f3f2a59b9ea5", "coordinator": false, "state": "active"}, {"node_id": "6ef3f8ddf30a", "coordinator": false, "state": "active"}], "splits_by_node_stage": [{"node_id": "6ef3f8ddf30a", "stage_id": 0, "splits": 3}, {"node_id": "f3f2a59b9ea5", "stage_id": 0, "splits": 2}], "scan_stage_id": 0, "scan_splits_total": 5, "scan_splits_by_node": {"6ef3f8ddf30a": 3, "f3f2a59b9ea5": 2}, "nodes_with_scan_splits": 2}
+
+=== 02:24:36 === restoring the single-shard topology
+
+=== 02:24:36 === .venv/bin/python generator/select_topology.py --index bench_events_10m
+closed  bench_events_10m_s5
+opened  bench_events_10m
+
+resident topology -> bench_events_10m (1 shard(s))
+
+  OPEN    bench_events_10m               1 shard(s)      10000000 docs
+  closed  bench_events_10m_s5                     -             - docs
+
+=== 02:24:37 === wrote results/20260818T230041-v0251-5shard/summary.md
+
+=== 02:24:37 === DONE  phase 3 (results/20260818T230041-v0251-5shard)

@@ -1,0 +1,3 @@
+index=bench_events_10m
+caps=8g 6g 4g 3g 2g
+engines=trino

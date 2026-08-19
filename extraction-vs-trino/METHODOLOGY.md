@@ -98,11 +98,11 @@ No number is published that did not come out of a run of this harness.
   was not always obeyed: until 2026-08-17 the Flight runner dialled `127.0.0.1` while every Trino
   route dialled `localhost`.
 
-  Correcting it was worth **0.06 ms** — Trino's connect moved from 1.76 ms to 1.70 ms — because
-  Trino's Python clients resolve through the OS resolver, which answers from `/etc/hosts` in
-  microseconds. The stock ADBC Flight SQL driver is Go and uses grpc-go's own resolver, which does
+  It costs Trino almost nothing to dial a name: its Python clients resolve through the OS
+  resolver, which answers from `/etc/hosts` in microseconds — Trino's measured connect in this
+  session is **1.58 ms** (S1) whichever it dials. The stock ADBC Flight SQL driver is Go and uses grpc-go's own resolver, which does
   not consult `/etc/hosts`. A four-layer connect probe (`probe_connect.py`, artifact
-  `connect-probe.json`) separates the cost by layer: bare TCP 0.07 ms, the Flight C++ layer 1.6 ms,
+  `connect-probe.json`) separates the cost by layer: bare TCP 0.09 ms, the Flight C++ layer 1.6 ms,
   the Go ADBC layer dialling an IP 3.0 ms, and **the same layer dialling a name 17.7 ms** — a ≈15 ms
   resolver tax that belongs to the driver, not to the protocol (the host's own resolver answers the
   same name in 0.20 ms). Behind it sits a 5 s per-query DNS
@@ -127,11 +127,11 @@ No number is published that did not come out of a run of this harness.
 - **ES wire bytes:** read from the container network counters, so a wire-volume difference is
   measured, not asserted. Since 2026-08-16 the counter is read **at the Elasticsearch container**
   (bytes it transmitted), so the figure cannot depend on how many containers the engine is made of.
-  Sessions before that date recorded only the *engine* container's received bytes; on this
-  single-node topology the two agree to within 0.1% (verified by re-measuring both in the
-  2026-08-16 session), but they are not the same metric. **Every ES-wire figure RESULTS publishes is
-  now the Elasticsearch-side one**, section 6 included; the sidecar-side exception the earlier
-  edition had to name no longer exists.
+  Earlier sessions recorded only the *engine* container's received bytes, which is not the same
+  metric — and with Trino running as three containers it is not even the same quantity. Reading at
+  Elasticsearch removes that ambiguity: the figure counts what left the cluster, however many
+  containers the engine is made of. **Every ES-wire figure RESULTS publishes is the
+  Elasticsearch-side one**, section 6 included.
 - **Server-side cost is not measured.** Neither the Elasticsearch container, the sidecar, nor Trino
   has its CPU or memory recorded per run. Every resource figure published is a **client** figure.
   This is a real limitation of the harness rather than a claim: it means an aggregation push-down is
@@ -193,9 +193,9 @@ runs on Community and reproduces every scenario at reduced (`--limit`) scale.
   worker, 2 on the other, none on the coordinator — captured live from `system.runtime.tasks` by
   `probe_trino_splits.py`, because those rows are dropped the moment a query finishes and cannot be
   recovered afterwards. Both engines get faster; the S1 gap widens from **1.48× to 1.52×**; client
-  CPU, peak client memory (±0.02%) and the 2 GB container threshold do not move; the `GROUP BY`
+  CPU, peak client memory (0.01% ours, 0.04% Trino's) and the 2 GB container threshold do not move; the `GROUP BY`
   still moves 24 KB against 1.4 GB. Trino's own largest gain in the whole benchmark appears there
-  too — its aggregation wall-clock improves **4.3×** — and is published as such.
+  too — its aggregation wall-clock improves **4.4×** — and is published as such.
 
   The distinction the run establishes: **wall-clock is topology-sensitive; client cost and pushdown
   are not.** The client is one process consuming one wire format however large the cluster, and the

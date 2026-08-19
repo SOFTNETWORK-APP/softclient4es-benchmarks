@@ -1,0 +1,5 @@
+DO NOT PUBLISH. Timed on top of Trino's unfinished work from the S6 block, which
+OOM-kills its client by design; Trino then kept executing/finishing the abandoned
+queries (ABANDONED_QUERY finishing 174,524ms; ABANDONED_TASK running 1,000,564ms).
+Both engines' J2 degraded ~4x and trino/J0 failed 5/5 while the host was clean
+(pressure 1, ~17.2GB reclaimable on every run). Re-run after runners/wait_engines_idle.py.

@@ -164,14 +164,14 @@
   <table>
     <thead><tr><th style="width:14mm">ID</th><th>Question it answers</th><th style="width:66mm">Outcome</th></tr></thead>
     <tbody>
-      <tr><td class="first">S0</td><td>What does a single-process Python scroll client cost as a reference floor?</td><td>45.7 s to read 10M rows</td></tr>
+      <tr><td class="first">S0</td><td>What does a single-process Python scroll client cost as a reference floor?</td><td>43.8 s to read 10M rows</td></tr>
       <tr><td class="first">S0p</td><td>And a <i>sliced</i> scroll — 5 slices, 5 processes?</td><td><b>22.5 s</b>, for 2.9× SoftClient4ES's client CPU on S1</td></tr>
       <tr><td class="first">S1</td><td>Extract 10M rows into a client-side columnar table</td><td><b>1.48× faster</b>, 4.7× less CPU, 4.9× less memory</td></tr>
       <tr><td class="first">S1m</td><td>Extract <b>1,000,000</b> rows — the only scale all three stacks reach</td><td><b>ES|QL 0.61 s</b>, SoftClient4ES 3.85 s, Trino 5.18 s</td></tr>
       <tr><td class="first">S1r</td><td>Extract 10M rows into a <b>pandas / polars DataFrame</b> (what an analyst builds)</td><td><b>43% faster</b> on far less CPU and memory</td></tr>
       <tr><td class="first">S2</td><td>Extract 10M rows and compute an aggregate in DuckDB</td><td><b>1.65× faster</b>, 7.9× less memory</td></tr>
       <tr><td class="first">S3</td><td><code>GROUP BY</code> returning 100 rows</td><td><b>0.04 s vs 25 s</b>, and moves <b>24 KB against 1.4 GB</b> off the cluster</td></tr>
-      <tr><td class="first">S4</td><td>Fetch 100 rows (<code>LIMIT 100</code>)</td><td><span class="chip par">Parity</span> 38 ms vs 56 ms</td></tr>
+      <tr><td class="first">S4</td><td>Fetch 100 rows (<code>LIMIT 100</code>)</td><td><span class="chip par">Parity</span> 37 ms vs 56 ms</td></tr>
       <tr><td class="first">S5</td><td>Does the extraction fit in a constrained-memory container?</td><td>Fits <b>2 GB</b>; Trino's stock client never fits, its fastest client 3 GB</td></tr>
       <tr><td class="first">S6</td><td>How many concurrent extractions fit in an 8 GB budget?</td><td>SoftClient4ES <b>5</b> (50M rows); Trino <b>2</b> with its fastest client, <b>0</b> with its stock one</td></tr>
       <tr><td class="first">J0–J2</td><td>Cross-index JOIN landed as a DataFrame</td><td>Trino faster by 3.5% and 4.8% on two of three; SoftClient4ES 2.6% faster on the plain join and does 5–17× less client work</td></tr>
@@ -233,7 +233,7 @@ rows = cur.fetchall()                    <span class="c"># list of Python tuples
     <thead><tr><th>Metric</th><th class="num">SoftClient4ES</th><th class="num">Trino</th><th class="num" style="width:26mm">Ratio</th></tr></thead>
     <tbody>
       <tr><td class="first">Wall median</td><td class="num win">34.0 s <span class="small">(spread 1.4%)</span></td><td class="num">50.4 s <span class="small">(spread 1.5%)</span></td><td class="num"><b>1.48× faster</b></td></tr>
-      <tr><td class="first">Client CPU</td><td class="num win">5.2 s</td><td class="num">24.2 s</td><td class="num">4.7× less</td></tr>
+      <tr><td class="first">Client CPU</td><td class="num win">5.1 s</td><td class="num">24.0 s</td><td class="num">4.7× less</td></tr>
       <tr><td class="first">Peak client memory</td><td class="num win">916 MB</td><td class="num">4,462 MB</td><td class="num">4.9× less</td></tr>
       <tr><td class="first">ES wire</td><td class="num">2,492 MB</td><td class="num">2,923 MB</td><td class="num">—</td></tr>
       <tr><td class="first">Rows / columns</td><td class="num">10,000,000 / 8</td><td class="num">10,000,000 / 8</td><td class="num">✓</td></tr>

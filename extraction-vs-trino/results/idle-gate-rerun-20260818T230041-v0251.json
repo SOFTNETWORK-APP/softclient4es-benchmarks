@@ -1,0 +1,15 @@
+{
+  "verdict": "timeout",
+  "observations": [
+    "trino coordinator unreachable",
+    "trino coordinator unreachable",
+    "trino coordinator unreachable",
+    "trino coordinator unreachable",
+    "trino coordinator unreachable",
+    "trino coordinator unreachable",
+    "trino coordinator unreachable",
+    "trino coordinator unreachable",
+    "trino coordinator unreachable",
+    "trino coordinator unreachable"
+  ]
+}

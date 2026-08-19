@@ -1,0 +1,19 @@
+{
+  "engine": "flight",
+  "mode": "chunked",
+  "cap": "8g",
+  "verdict": "completed",
+  "exit_code": 0,
+  "payload": {
+    "engine": "flight",
+    "mode": "chunked",
+    "cap": "8g",
+    "outcome": "completed",
+    "rows": 10000000,
+    "wall_s": 36.20695518299999,
+    "cpu_s": 8.096797882,
+    "peak_rss_mb": 146.3203125,
+    "rows_ok": true,
+    "chunksize": 100000
+  }
+}

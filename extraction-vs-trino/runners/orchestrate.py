@@ -383,9 +383,24 @@ def main():
 
     plan = [(sc, st) for sc in a.scenarios
             for st in sorted(stacks_for(sc) & set(a.stacks))]
-    (session / "plan.json").write_text(json.dumps(
-        {"warmups": a.warmups, "runs": a.runs, "index": a.index,
-         "variant": a.variant, "plan": plan}, indent=2))
+    # APPEND, never overwrite. A session is many invocations of this script -- the
+    # published single-shard matrix is ~16 of them -- and each one used to rewrite
+    # plan.json, so the artifact left behind described only the LAST block. A reader
+    # opening a 165-run session found a plan claiming one scenario on one stack, which
+    # misdescribes the session in the one file whose whole job is to describe it.
+    plan_file = session / "plan.json"
+    prior = []
+    if plan_file.exists():
+        try:
+            existing = json.loads(plan_file.read_text())
+            prior = existing.get("invocations", []) if isinstance(existing, dict) else []
+        except (ValueError, OSError):
+            prior = []          # unreadable: record this invocation rather than lose it
+    prior.append({"warmups": a.warmups, "runs": a.runs, "index": a.index,
+                  "variant": a.variant, "argv": sys.argv[1:], "plan": plan})
+    plan_file.write_text(json.dumps(
+        {"invocations": prior,
+         "measured_runs": sum(len(i["plan"]) * i["runs"] for i in prior)}, indent=2))
     if not plan:
         sys.exit("empty plan: the requested scenarios and stacks do not intersect")
 

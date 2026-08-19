@@ -1,0 +1,20 @@
+{
+  "engine": "trino",
+  "route": "stock",
+  "n": 1,
+  "cap_mb": 8192,
+  "budget_gib": 8.0,
+  "completed": 0,
+  "total_wall_s": 61.85719529200287,
+  "runs": [
+    {
+      "idx": 0,
+      "route": "stock",
+      "outcome": "OOM-KILLED",
+      "exit_code": 137,
+      "wall_s": 61.85650012500264,
+      "peak_rss_mb": null,
+      "rows": null
+    }
+  ]
+}

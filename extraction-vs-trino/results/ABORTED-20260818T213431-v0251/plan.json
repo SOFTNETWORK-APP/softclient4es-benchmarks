@@ -1,0 +1,16 @@
+{
+  "warmups": 2,
+  "runs": 5,
+  "index": "bench_events_10m",
+  "variant": "polars",
+  "plan": [
+    [
+      "S1r",
+      "flight"
+    ],
+    [
+      "S1r",
+      "trino"
+    ]
+  ]
+}

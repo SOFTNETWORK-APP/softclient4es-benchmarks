@@ -1,0 +1,5 @@
+config_image=softnetwork/softclient4es8-arrow-flight-sql:0.2.5.1
+image_id=sha256:90f0cf405655a67021227d6aa38fe24e48ea67a876e1e0888f8e32a94c589a62
+repo_tags=[softnetwork/softclient4es8-arrow-flight-sql:0.2.5.1]
+repo_digests=[softnetwork/softclient4es8-arrow-flight-sql@sha256:90f0cf405655a67021227d6aa38fe24e48ea67a876e1e0888f8e32a94c589a62]
+created=2026-08-18T14:33:32.157953803Z

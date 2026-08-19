@@ -1,12 +1,12 @@
 # Findings — issues discovered and fixed during benchmarking
 
 Building this benchmark surfaced several issues in SoftClient4ES. All were fixed, and the results in
-[RESULTS.md](RESULTS.md) were measured on the released `0.2.5` build that contains the fixes. This
+[RESULTS.md](RESULTS.md) were measured on the released `0.2.5.1` build that contains the fixes. This
 document is the summary of what was found and how it was resolved.
 
 ## Extraction performance
 
-Two independent causes were making large extractions slower than they needed to be:
+Three independent causes were making large extractions slower than they needed to be:
 
 - **Deep-paging sort regression (Elasticsearch 8+).** For a query with no `ORDER BY`, the streaming
   pager injected `_shard_doc` as the primary sort. From Elasticsearch 8 / Lucene 9 onward this
@@ -20,6 +20,16 @@ Two independent causes were making large extractions slower than they needed to 
   normalization and re-parsing of each response page). This was reduced to a single parse per page
   and a single-pass row conversion, which is the main reason the client-CPU figures in S1/S2 are as
   low as they are.
+
+- **The schema probe re-ran bounded statements** (fixed in `0.2.5.1`). To advertise a result's
+  schema the Flight endpoint executed the statement itself, and when the statement already carried a
+  `LIMIT` it executed it *in full* — so a bounded extraction read every row off Elasticsearch
+  **twice**. It is visible in the wire rather than only the clock: S1m moved from 495 to **247 bytes
+  per row**, against 249 on the unbounded ten-million-row run, and its wall clock halved. The probe
+  now reads at most 100 rows and never more than the statement asked for; aggregation-shaped
+  statements, where a `LIMIT` is a bucket count rather than a row count, are left untouched. This is
+  the one fix that changed a published outcome — S1m goes from losing to Trino to winning — which is
+  why every figure in RESULTS.md was re-measured on `0.2.5.1` rather than carried over.
 
 Together these fixes are what let SoftClient4ES page and convert 10M rows efficiently in the results
 above.

@@ -1,0 +1,9 @@
+{
+  "probe": "os-resolver",
+  "name": "localhost",
+  "repeat": 30,
+  "median_ms": 0.2010415046242997,
+  "min_ms": 0.16466699889861047,
+  "max_ms": 1.284250000026077,
+  "note": "getaddrinfo() on the measurement host, i.e. what a client using the OS resolver pays for the same name grpc-go resolves itself. Measured immediately after session 20260818T230041-v0251, not inside it: it involves no engine and no query."
+}
