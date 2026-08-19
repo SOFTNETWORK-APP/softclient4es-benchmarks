@@ -102,7 +102,7 @@ Each of these is tagged so its runs can never blend into the headline medians.
 # Drift control: re-run the first stack's block at the end of the session
 .venv/bin/python runners/orchestrate.py --scenarios S1 --drift-scenarios S1 --stop-idle-engine
 
-# Page size: tuned on their side, tuned on ours (both are possible on 0.2.5)
+# Page size: tuned on their side, tuned on ours (both are possible on 0.2.5.1)
 .venv/bin/python runners/orchestrate.py --stacks trino --scenarios S1 --trino-catalog elasticsearch_tuned
 ARROW_BATCH_SIZE=5000 docker compose up -d flight-sql
 

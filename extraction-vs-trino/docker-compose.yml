@@ -33,10 +33,15 @@ services:
       retries: 30
 
   flight-sql:
-    # The published results were measured on 0.2.5; override with SIDECAR_TAG in .env to
+    # The published results were measured on 0.2.5.1; override with SIDECAR_TAG in .env to
     # measure a different image. Each session records the resolved image digest in
     # results/<session>/sidecar-image.txt.
-    image: softnetwork/softclient4es8-arrow-flight-sql:${SIDECAR_TAG:-0.2.5}
+    #
+    # ⚠️ 0.2.5 vs 0.2.5.1 is NOT a cosmetic bump for this benchmark. On 0.2.5 the Flight
+    # schema probe re-ran the user's whole statement whenever it already carried a LIMIT
+    # (arrow#163), so every bounded extraction read its rows off Elasticsearch TWICE.
+    # S1m is the cell that moves; do not blend figures across the two tags.
+    image: softnetwork/softclient4es8-arrow-flight-sql:${SIDECAR_TAG:-0.2.5.1}
     depends_on:
       elasticsearch:
         condition: service_healthy

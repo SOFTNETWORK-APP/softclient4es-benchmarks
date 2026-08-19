@@ -50,9 +50,24 @@ No number is published that did not come out of a run of this harness.
   cannot join it because each rebuilds its own container topology — S5 caps the client container,
   S6 launches N of them, and the joins use a second index — so each is its own session, run the
   same night on the same host and the same image, and RESULTS names the session behind every table.
-- **Identical container limits:** Elasticsearch, the sidecar, and Trino each get 4 CPU / 4 GB.
-  Elasticsearch heap is pinned at 2 GB; Trino's official image auto-sizes its heap from container
-  memory.
+- **One product version per publication.** Every figure RESULTS publishes comes from a single
+  sidecar image, never blended across releases. When a release changes the data path, the whole
+  matrix is re-measured rather than patched — a single cell can move by 2× and reverse, which a
+  mixed table would hide.
+- **Blocks are separated by an engine-quiescence gate, not by the previous block's exit.** S5 and S6
+  kill their clients deliberately, and a Trino query whose client has gone keeps executing and
+  "finishing" on the cluster for minutes afterwards (`ABANDONED_QUERY` and `ABANDONED_TASK` states,
+  observed running for hundreds of seconds). Timing the next block against that leftover work
+  measures neither engine: `wait_engines_idle.py` blocks until Trino reports no query in flight and
+  the sidecar's CPU has returned to idle, and refuses rather than proceeding if that does not
+  happen within its timeout.
+- **Container limits, and the handicap they encode:** Elasticsearch and the SoftClient4ES sidecar
+  each get 4 CPU / 4 GB. **Trino gets more, deliberately** — it runs as a 3-node cluster
+  (coordinator 2 CPU / 2 GB, two workers 2 CPU / 3 GB each) totalling **6 CPU / 8 GB**, i.e. 1.5×
+  the CPU and 2× the memory, in *every* scenario rather than only the multi-shard one. Trino is
+  the system that benefits from more hardware, so giving it more makes every result here a
+  conservative statement of the gap. Elasticsearch heap is pinned at 2 GB; Trino's official image
+  auto-sizes its heap from container memory.
 - **Page-size symmetry:** the sidecar's `ARROW_BATCH_SIZE=1000` equals Trino's
   `elasticsearch.scroll-size=1000`. Both are product defaults, pinned explicitly so the setting can
   be checked.
@@ -88,8 +103,9 @@ No number is published that did not come out of a run of this harness.
   microseconds. The stock ADBC Flight SQL driver is Go and uses grpc-go's own resolver, which does
   not consult `/etc/hosts`. A four-layer connect probe (`probe_connect.py`, artifact
   `connect-probe.json`) separates the cost by layer: bare TCP 0.07 ms, the Flight C++ layer 1.6 ms,
-  the Go ADBC layer dialling an IP 2.8 ms, and **the same layer dialling a name 18.1 ms** — a ≈15 ms
-  resolver tax that belongs to the driver, not to the protocol. Behind it sits a 5 s per-query DNS
+  the Go ADBC layer dialling an IP 3.0 ms, and **the same layer dialling a name 17.7 ms** — a ≈15 ms
+  resolver tax that belongs to the driver, not to the protocol (the host's own resolver answers the
+  same name in 0.20 ms). Behind it sits a 5 s per-query DNS
   timeout that produced 5.2 s and 10.1 s outliers in earlier sessions; that cause was established
   and closed in softclient4es-arrow#151.
 
@@ -98,9 +114,9 @@ No number is published that did not come out of a run of this harness.
   resolution from every arm. **Where it matters is a question of scale, and the answer differs by
   scenario:** ≈15 ms is 0.04% of a ten-million-row extraction and changes nothing, while on the S4
   control — a 100-row fetch — it is the whole result. Both dials are therefore measured and both are
-  published: dialled by IP, S4 is 0.038 s against Trino's 0.056 s; dialled by name it is **0.056 s,
-  exactly Trino's**. The name lookup does not invert that control, it **erases** it, and RESULTS
-  says so where the control appears. The driver's cost is published as a deployment note, not as a
+  published: dialled by IP, S4 is 0.037 s against Trino's 0.056 s; dialled by name it is **0.053 s**,
+  which at these spreads (~20%) is no longer distinguishable from Trino's. The name lookup does not
+  invert that control, it **erases** it, and RESULTS says so where the control appears. The driver's cost is published as a deployment note, not as a
   scenario: with the Go driver, dial an address or reuse the connection.
 - **Client CPU:** `time.process_time()` for the client process — the CPU spent turning the wire
   format into usable values.
@@ -143,8 +159,9 @@ runs on Community and reproduces every scenario at reduced (`--limit`) scale.
 
 ## 6. Known limitations
 
-- **Single node throughout.** This does not exercise Trino's distributed execution, spill-to-disk,
-  or fault tolerance — real strengths of Trino that a single-node extraction benchmark cannot show.
+- **One Elasticsearch node, and a 3-node Trino.** The cluster Trino runs on here is real but tiny,
+  and nothing exercises its spill-to-disk or fault tolerance — real strengths of Trino that an
+  extraction benchmark at this scale cannot show.
 - **One flat mapping, no nested fields or arrays.** This avoids Trino's documented gaps in those
   types, so the connector is not handicapped; it also means the benchmark says nothing about SQL
   coverage, only about extraction efficiency.
@@ -175,7 +192,7 @@ runs on Community and reproduces every scenario at reduced (`--limit`) scale.
   6 CPU / 8 GB against SoftClient4ES's 4 CPU / 4 GB. Trino's plan used 5 scan splits — 3 on one
   worker, 2 on the other, none on the coordinator — captured live from `system.runtime.tasks` by
   `probe_trino_splits.py`, because those rows are dropped the moment a query finishes and cannot be
-  recovered afterwards. Both engines get faster; the S1 gap widens from **1.46× to 1.51×**; client
+  recovered afterwards. Both engines get faster; the S1 gap widens from **1.48× to 1.52×**; client
   CPU, peak client memory (±0.02%) and the 2 GB container threshold do not move; the `GROUP BY`
   still moves 24 KB against 1.4 GB. Trino's own largest gain in the whole benchmark appears there
   too — its aggregation wall-clock improves **4.3×** — and is published as such.

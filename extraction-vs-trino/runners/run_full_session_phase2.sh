@@ -50,6 +50,15 @@ run $PY runners/orchestrate_concurrent.py --budget 8 --session "results/concurre
 run $PY runners/orchestrate_concurrent.py --budget 8 --route connectorx \
         --engines trino --session "results/concurrent-cx-$STAMP"
 
+# Both blocks above KILL their clients on purpose (that is the scenario). Trino
+# keeps executing and "finishing" an abandoned query for minutes afterwards --
+# measured 2026-08-19: ABANDONED_QUERY with 174s of "finishing", and an
+# ABANDONED_TASK still running after 1,000s. The join block below started two
+# minutes after S6 and was timed on top of it: BOTH engines' J2 degraded ~4x and
+# Trino's J0 failed 5/5, on a host that was provably clean. Wait for the engines
+# to actually drain instead of assuming a block ends when its client exits.
+run $PY runners/wait_engines_idle.py --out "results/idle-gate-$STAMP.json"
+
 # ── J0-J2: cross-index JOIN, the scenarios Trino wins ────────────────────────
 run $PY runners/orchestrate_join.py --session "results/join-$STAMP"
 

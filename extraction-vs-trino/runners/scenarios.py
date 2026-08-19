@@ -10,6 +10,7 @@ import json
 import os
 import pathlib
 import platform
+import re
 import resource
 import subprocess
 import sys
@@ -579,8 +580,22 @@ def memory_pressure():
     # Reclaimable = free + inactive. Inactive pages are backed and can be handed to a
     # new allocation without touching disk, so counting only "free" understates what
     # is actually available by several GB on a warm machine.
+    #
+    # ⚠️ THE PAGE SIZE COMES FROM vm_stat ITSELF, never a constant. This block used to
+    # multiply by a hard-coded 4096, which is the x86 page and NOT the page on the
+    # Apple Silicon host every published figure was measured on: `vm_stat` there counts
+    # 16,384-byte pages, so `available_mb` was reported at exactly a QUARTER of the
+    # host's real reclaimable memory (measured 2026-08-18: 3.0 GB reported against
+    # 12.1 GB actual). The error is fail-SAFE -- an over-strict floor can only refuse
+    # runs that would have been fine, never admit one that should have been refused --
+    # so no published figure is weakened by the correction; but it did abort legitimate
+    # sessions, and every `mem_pressure.available_mb` recorded before this date is 4x
+    # low on that host and must not be read as an absolute quantity.
     try:
         r = subprocess.run(["vm_stat"], capture_output=True, text=True, timeout=10)
+        # Header: "Mach Virtual Memory Statistics: (page size of 16384 bytes)"
+        m = re.search(r"page size of (\d+) bytes", r.stdout)
+        page_size = int(m.group(1)) if m else os.sysconf("SC_PAGE_SIZE")
         pages = {}
         for line in r.stdout.splitlines():
             if ":" in line:
@@ -589,8 +604,9 @@ def memory_pressure():
                 if v.isdigit():
                     pages[k.strip()] = int(v)
         free = pages.get("Pages free", 0) + pages.get("Pages inactive", 0)
-        out["available_mb"] = free * 4096 / (1024 * 1024)
-    except (subprocess.SubprocessError, OSError, ValueError):
+        out["available_mb"] = free * page_size / (1024 * 1024)
+        out["page_size_bytes"] = page_size
+    except (subprocess.SubprocessError, OSError, ValueError, AttributeError):
         pass
     return out
 

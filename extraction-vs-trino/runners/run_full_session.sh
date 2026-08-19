@@ -81,7 +81,15 @@ done
 run $O --stacks esql --scenarios S1m S3 S4
 run $O --stacks esql --scenarios S1m S3 S4 --esql-route arrow
 run $PY runners/run_esql.py --probe-truncation --out "$SESSION/esql-truncation-probe.json"
-run $PY runners/run_esql.py --probe-join --out "$SESSION/esql-join-probe.json"
+# ⚠️ TWO INDEX NAMES, BEFORE any other option. `--probe-join` is nargs=2, so
+# `--probe-join --out f.json` binds LEFT="--out" -- which once produced a probe
+# recording "rejected, status 400", i.e. an artifact that reads exactly like the
+# ES|QL refusal this probe exists to capture. run_esql.py now REFUSES that shape,
+# and on 2026-08-19 the refusal cost a full session its join evidence because the
+# guard was added and this call site was not. Pass the pair the J scenarios use
+# (orchestrate_join.py's --large / --small defaults).
+run $PY runners/run_esql.py --probe-join bench_events_10m bench_1m \
+        --out "$SESSION/esql-join-probe.json"
 
 # ── 6. sensitivity arms, each tagged so it cannot blend into a median ────────
 run $O --stacks trino  --scenarios S1 --trino-catalog elasticsearch_tuned

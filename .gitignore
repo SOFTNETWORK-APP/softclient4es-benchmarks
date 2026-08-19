@@ -11,6 +11,8 @@ __pycache__/
 # is scratch.
 **/results/*/
 **/results/*.log
+**/results/*.out
+**/results/*.json
 **/results/summary.md
 
 # Local-only Docker override (e.g. licence injection for full-scale runs)
