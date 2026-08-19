@@ -15,7 +15,7 @@ import time
 
 from trino.dbapi import connect
 
-from scenarios import (DEFAULT_INDEX, ENGINE_SERVICES, EXPECTED_COLS_TRINO_S1,
+from scenarios import (DEFAULT_INDEX, ENGINE_SERVICES, EXPECTED_COLS_TRINO_S1, HOST,
                        SQL_AGG_DUCK, check, compose_variant, emit, guard_environment, host_load,
                        memory_pressure, net_bytes, net_bytes_all, net_delta,
                        peak_footprint_mb, peak_rss_mb, sql_for)
@@ -60,7 +60,7 @@ def run_s1r_dataframe(sql, dtype_backend, frame="pandas"):
         # in the SQL here. Same namespace, not a different query.
         cx_sql = sql.replace(" FROM ", " FROM default.", 1)
         q0 = time.perf_counter()
-        df = cx.read_sql(f"trino://bench@localhost:8080/{CATALOG}",
+        df = cx.read_sql(f"trino://bench@{HOST}:8080/{CATALOG}",
                          cx_sql, return_type="polars")
         rows, cols = df.height, df.width
         dispose = None
@@ -71,7 +71,7 @@ def run_s1r_dataframe(sql, dtype_backend, frame="pandas"):
         connect_s = 0.0                        # one-shot API: connect not separable
         cx_sql = sql.replace(" FROM ", " FROM default.", 1)
         q0 = time.perf_counter()
-        df = cx.read_sql(f"trino://bench@localhost:8080/{CATALOG}",
+        df = cx.read_sql(f"trino://bench@{HOST}:8080/{CATALOG}",
                          cx_sql, return_type="pandas")
         rows, cols = len(df), df.shape[1]
         dispose = None
@@ -84,7 +84,7 @@ def run_s1r_dataframe(sql, dtype_backend, frame="pandas"):
         from adbc_driver_manager import dbapi as adbc_dbapi
         conn = adbc_dbapi.connect(
             driver="trino",
-            db_kwargs={"uri": f"http://bench@localhost:8080"
+            db_kwargs={"uri": f"http://bench@{HOST}:8080"
                               f"?catalog={CATALOG}&schema=default"})
         cur = conn.cursor()
         connect_s = time.perf_counter() - t0
@@ -104,7 +104,7 @@ def run_s1r_dataframe(sql, dtype_backend, frame="pandas"):
         from adbc_driver_manager import dbapi as adbc_dbapi
         conn = adbc_dbapi.connect(
             driver="trino",
-            db_kwargs={"uri": f"http://bench@localhost:8080"
+            db_kwargs={"uri": f"http://bench@{HOST}:8080"
                               f"?catalog={CATALOG}&schema=default"})
         cur = conn.cursor()
         connect_s = time.perf_counter() - t0
@@ -116,7 +116,7 @@ def run_s1r_dataframe(sql, dtype_backend, frame="pandas"):
     else:
         from sqlalchemy import create_engine
         engine = create_engine(
-            f"trino://bench@localhost:8080/{CATALOG}/default")
+            f"trino://bench@{HOST}:8080/{CATALOG}/default")
         conn = engine.connect()
         connect_s = time.perf_counter() - t0
         q0 = time.perf_counter()
@@ -166,7 +166,7 @@ def run(scenario, index, encoding=None, request_timeout=None, dtype_backend="def
         t0, c0 = time.perf_counter(), time.process_time()
         conn = adbc_dbapi.connect(
             driver="trino",
-            db_kwargs={"uri": f"http://bench@localhost:8080"
+            db_kwargs={"uri": f"http://bench@{HOST}:8080"
                               f"?catalog={CATALOG}&schema=default"})
         cur = conn.cursor()
         connect_s = time.perf_counter() - t0
@@ -201,7 +201,7 @@ def run(scenario, index, encoding=None, request_timeout=None, dtype_backend="def
         import connectorx as cx                # imported here: never weighs on stock runs
         t0, c0 = time.perf_counter(), time.process_time()
         cx_sql = sql.replace(" FROM ", " FROM default.", 1)
-        tbl = cx.read_sql(f"trino://bench@localhost:8080/{CATALOG}",
+        tbl = cx.read_sql(f"trino://bench@{HOST}:8080/{CATALOG}",
                           cx_sql, return_type="arrow")
         out = {"rows": tbl.num_rows, "cols": tbl.num_columns,
                "col_names": list(tbl.schema.names),
@@ -218,7 +218,7 @@ def run(scenario, index, encoding=None, request_timeout=None, dtype_backend="def
             f"{scenario}: expected {EXPECTED_COLS_TRINO_S1} columns from Trino, "
             f"got {out['cols']}")
         return out
-    kwargs = dict(host="localhost", port=8080, user="bench",
+    kwargs = dict(host=HOST, port=8080, user="bench",
                   catalog=CATALOG, schema="default")
     if encoding:                       # optional S1-spooled variant
         kwargs["encoding"] = encoding
@@ -271,7 +271,6 @@ def run(scenario, index, encoding=None, request_timeout=None, dtype_backend="def
 
 
 if __name__ == "__main__":
-    guard_environment()
     p = argparse.ArgumentParser()
     p.add_argument("--scenario", required=True, choices=SCENARIOS)
     p.add_argument("--index", default=DEFAULT_INDEX)
@@ -291,6 +290,11 @@ if __name__ == "__main__":
                         "elasticsearch_tuned (5000) -- the page-size sensitivity arm")
     p.add_argument("--out")
     a = p.parse_args()
+    # Parse BEFORE guarding: the memory floor is sized to the scenario about to
+    # run (scenarios.min_available_gb), and a flat floor sized for the heaviest
+    # arm in the matrix refuses light ones for no reason -- it blocked an S4
+    # re-run on 2026-08-17 over an arm whose client holds 83 MB.
+    guard_environment(a.scenario)
     CATALOG = a.catalog
     if a.frame != "pandas" and a.dtype_backend != "default":
         raise SystemExit("--dtype-backend is a pandas concept; do not combine with --frame")

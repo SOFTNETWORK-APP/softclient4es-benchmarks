@@ -1,0 +1,212 @@
+
+=== 21:34:31 === session results/20260818T213431-v0251
+
+=== 21:34:31 === .venv/bin/python runners/verify_equivalence.py --out results/20260818T213431-v0251/equivalence-gate.json
+/Users/smanciot/git/softnetwork-app/softclient4es-benchmarks/extraction-vs-trino/.venv/lib/python3.12/site-packages/adbc_driver_manager/dbapi.py:369: Warning: Cannot disable autocommit; conn will not be DB-API 2.0 compliant
+  warnings.warn(
+ok   count: flight=10000000.0 trino=10000000
+ok   count: flight=10000000.0 esql=10000000
+ok   sum_id: flight=49999995000000.0 trino=49999995000000
+ok   sum_id: flight=49999995000000.0 esql=49999995000000
+ok   sum_qty: flight=100022935.0 trino=100022935
+ok   sum_qty: flight=100022935.0 esql=100022935
+ok   sum_amount: flight=5006090520.54 trino=5006090520.540315
+ok   sum_amount: flight=5006090520.54 esql=5006090520.54
+S3 groups flight vs trino: 100 groups identical (counts exact, averages within 1e-09)
+S3 groups flight vs esql: 100 groups identical (counts exact, averages within 1e-09)
+ok   terms exactness: doc_count_error_upper_bound=0, sum_other_doc_count=0 (size=65536, 100 buckets)
+
+All equivalence checks passed: every stack returns the same data.
+
+=== 21:36:05 === .venv/bin/python runners/orchestrate.py --session results/20260818T213431-v0251 --stop-idle-engine --stacks es-raw --scenarios S0 S0p
+session: results/20260818T213431-v0251
+[es-raw S0] warmup 1/2
+[es-raw S0] warmup 2/2
+[es-raw S0] run 1/5
+[es-raw S0] run 2/5
+[es-raw S0] run 3/5
+[es-raw S0] run 4/5
+[es-raw S0] run 5/5
+[es-raw S0p] warmup 1/2
+[es-raw S0p] warmup 2/2
+[es-raw S0p] run 1/5
+[es-raw S0p] run 2/5
+[es-raw S0p] run 3/5
+[es-raw S0p] run 4/5
+[es-raw S0p] run 5/5
+
+completed 10 measured run(s)
+session: results/20260818T213431-v0251
+
+=== 21:44:10 === .venv/bin/python runners/orchestrate.py --session results/20260818T213431-v0251 --stop-idle-engine --stacks flight trino --scenarios S1 S1m S1r S2 S3 S4
+session: results/20260818T213431-v0251
+[flight S1] warmup 1/2
+[flight S1] warmup 2/2
+[flight S1] run 1/5
+[flight S1] run 2/5
+[flight S1] run 3/5
+[flight S1] run 4/5
+[flight S1] run 5/5
+Trino cluster ready: 3 active nodes (2 workers: 6ef3f8ddf30a, f3f2a59b9ea5)
+[trino S1] warmup 1/2
+[trino S1] warmup 2/2
+[trino S1] run 1/5
+[trino S1] run 2/5
+[trino S1] run 3/5
+[trino S1] run 4/5
+[trino S1] run 5/5
+[flight S1m] warmup 1/2
+[flight S1m] warmup 2/2
+[flight S1m] run 1/5
+[flight S1m] run 2/5
+[flight S1m] run 3/5
+[flight S1m] run 4/5
+[flight S1m] run 5/5
+Trino cluster ready: 3 active nodes (2 workers: 6ef3f8ddf30a, f3f2a59b9ea5)
+[trino S1m] warmup 1/2
+[trino S1m] warmup 2/2
+[trino S1m] run 1/5
+[trino S1m] run 2/5
+[trino S1m] run 3/5
+[trino S1m] run 4/5
+[trino S1m] run 5/5
+[flight S1r] warmup 1/2
+[flight S1r] warmup 2/2
+[flight S1r] run 1/5
+[flight S1r] run 2/5
+[flight S1r] run 3/5
+[flight S1r] run 4/5
+[flight S1r] run 5/5
+Trino cluster ready: 3 active nodes (2 workers: 6ef3f8ddf30a, f3f2a59b9ea5)
+[trino S1r] warmup 1/2
+[trino S1r] warmup 2/2
+[trino S1r] run 1/5
+[trino S1r] run 2/5
+[trino S1r] run 3/5
+[trino S1r] run 4/5
+[trino S1r] run 5/5
+[flight S2] warmup 1/2
+[flight S2] warmup 2/2
+[flight S2] run 1/5
+[flight S2] run 2/5
+[flight S2] run 3/5
+[flight S2] run 4/5
+[flight S2] run 5/5
+Trino cluster ready: 3 active nodes (2 workers: 6ef3f8ddf30a, f3f2a59b9ea5)
+[trino S2] warmup 1/2
+[trino S2] warmup 2/2
+[trino S2] run 1/5
+[trino S2] run 2/5
+[trino S2] run 3/5
+[trino S2] run 4/5
+[trino S2] run 5/5
+[flight S3] warmup 1/2
+[flight S3] warmup 2/2
+[flight S3] run 1/5
+[flight S3] run 2/5
+[flight S3] run 3/5
+[flight S3] run 4/5
+[flight S3] run 5/5
+Trino cluster ready: 3 active nodes (2 workers: 6ef3f8ddf30a, f3f2a59b9ea5)
+[trino S3] warmup 1/2
+[trino S3] warmup 2/2
+[trino S3] run 1/5
+[trino S3] run 2/5
+[trino S3] run 3/5
+[trino S3] run 4/5
+[trino S3] run 5/5
+[flight S4] warmup 1/2
+[flight S4] warmup 2/2
+[flight S4] run 1/5
+[flight S4] run 2/5
+[flight S4] run 3/5
+[flight S4] run 4/5
+[flight S4] run 5/5
+Trino cluster ready: 3 active nodes (2 workers: 6ef3f8ddf30a, f3f2a59b9ea5)
+[trino S4] warmup 1/2
+[trino S4] warmup 2/2
+[trino S4] run 1/5
+[trino S4] run 2/5
+[trino S4] run 3/5
+[trino S4] run 4/5
+[trino S4] run 5/5
+
+completed 60 measured run(s)
+session: results/20260818T213431-v0251
+
+=== 22:24:45 === .venv/bin/python runners/orchestrate.py --session results/20260818T213431-v0251 --stop-idle-engine --stacks trino --scenarios S1 --route connectorx
+session: results/20260818T213431-v0251
+Trino cluster ready: 3 active nodes (2 workers: 6ef3f8ddf30a, f3f2a59b9ea5)
+[trino S1] warmup 1/2
+[trino S1] warmup 2/2
+[trino S1] run 1/5
+[trino S1] run 2/5
+[trino S1] run 3/5
+[trino S1] run 4/5
+[trino S1] run 5/5
+
+completed 5 measured run(s)
+session: results/20260818T213431-v0251
+
+=== 22:30:48 === .venv/bin/python runners/orchestrate.py --session results/20260818T213431-v0251 --stop-idle-engine --stacks trino --scenarios S1 --route adbc
+session: results/20260818T213431-v0251
+Trino cluster ready: 3 active nodes (2 workers: 6ef3f8ddf30a, f3f2a59b9ea5)
+[trino S1] warmup 1/2
+[trino S1] warmup 2/2
+[trino S1] run 1/5
+[trino S1] run 2/5
+[trino S1] run 3/5
+[trino S1] run 4/5
+[trino S1] run 5/5
+
+completed 5 measured run(s)
+session: results/20260818T213431-v0251
+
+=== 22:36:51 === .venv/bin/python runners/orchestrate.py --session results/20260818T213431-v0251 --stop-idle-engine --stacks flight --scenarios S1r --dtype-backend pyarrow
+session: results/20260818T213431-v0251
+[flight S1r] warmup 1/2
+[flight S1r] warmup 2/2
+[flight S1r] run 1/5
+[flight S1r] run 2/5
+[flight S1r] run 3/5
+[flight S1r] run 4/5
+[flight S1r] run 5/5
+
+completed 5 measured run(s)
+session: results/20260818T213431-v0251
+
+=== 22:41:15 === .venv/bin/python runners/orchestrate.py --session results/20260818T213431-v0251 --stop-idle-engine --stacks trino --scenarios S1r --dtype-backend pyarrow
+session: results/20260818T213431-v0251
+Trino cluster ready: 3 active nodes (2 workers: 6ef3f8ddf30a, f3f2a59b9ea5)
+[trino S1r] warmup 1/2
+[trino S1r] warmup 2/2
+[trino S1r] run 1/5
+[trino S1r] run 2/5
+[trino S1r] run 3/5
+[trino S1r] run 4/5
+[trino S1r] run 5/5
+
+completed 5 measured run(s)
+session: results/20260818T213431-v0251
+
+=== 22:48:59 === .venv/bin/python runners/orchestrate.py --session results/20260818T213431-v0251 --stop-idle-engine --stacks flight trino --scenarios S1r --frame polars
+session: results/20260818T213431-v0251
+[flight S1r] warmup 1/2
+[flight S1r] warmup 2/2
+[flight S1r] run 1/5
+[flight S1r] run 2/5
+[flight S1r] run 3/5
+[flight S1r] run 4/5
+[flight S1r] run 5/5
+Trino cluster ready: 3 active nodes (2 workers: 6ef3f8ddf30a, f3f2a59b9ea5)
+[trino S1r] warmup 1/2
+[trino S1r] warmup 2/2
+refusing to measure: macOS reports memory pressure level 2 (warning).
+Wall clock and client CPU inflate under paging while peak footprint does not, so the run would look ordinary and be wrong.
+Free memory (JVMs, browsers, editors) and re-run.
+
+trino/S1r: a guard refused this run -- aborting. The refusal above says what to change.
+
+=== 22:54:53 === FAILED: .venv/bin/python runners/orchestrate.py --session results/20260818T213431-v0251 --stop-idle-engine --stacks flight trino --scenarios S1r --frame polars
+
+=== 22:54:53 === a guard refused -- aborting the session

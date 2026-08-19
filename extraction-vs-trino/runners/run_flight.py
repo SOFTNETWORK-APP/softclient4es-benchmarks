@@ -30,26 +30,33 @@ import time
 import adbc_driver_flightsql.dbapi as dbapi
 
 from scenarios import (DEFAULT_INDEX, ENGINE_SERVICES, EXPECTED_MIN_COLS_FLIGHT_S1,
-                       EXPECTED_ROWS, SQL_AGG_DUCK, check, emit, guard_environment,
+                       EXPECTED_ROWS, HOST, SQL_AGG_DUCK, check, emit, guard_environment,
                        compose_variant, host_load, memory_pressure, net_bytes, net_bytes_all, net_delta,
                        peak_footprint_mb, peak_rss_mb, sql_for)
 
-# IP literal, NOT "localhost" (fix for arrow#151). The ADBC Flight SQL driver is
-# Go; for a HOSTNAME its resolver issues real DNS queries (grpc-go's resolver,
-# not getaddrinfo, so /etc/hosts does not short-circuit it), and Go's per-query
-# DNS timeout is 5 s -- one dropped UDP response = +5.05 s connect, two = +10.1 s,
-# which is exactly the 5.2/10.1 s outlier signature in every recorded session.
-# Measured here: 60 connects to "localhost" -> median 92 ms, outliers 5.2/10.1 s;
-# 60 connects to "127.0.0.1" -> median 3 ms, no outliers. Raw TCP (0.04 ms) and
-# the C++ pyarrow client (1.6 ms) show the server was never the cost.
+# IP literal, from scenarios.HOST -- the SAME literal every other stack now dials.
+# Read that comment first: dialling a literal everywhere is a fairness rule, and
+# until 2026-08-17 only this runner obeyed it while every Trino route dialled a
+# name.
 #
-# ⚠️ THE DIAL IS A PUBLISHED FIGURE, NOT A HIDDEN OPTIMISATION. It is worth ~90 ms
-# of connect time, which is larger than the whole margin in the S4 control
-# (40 ms vs 57 ms), so S4 measured only by IP would rest a parity claim on an
-# undisclosed choice. `--dial hostname` measures the other side of it so both are
-# published, and the deployment guidance (IP literals or connection reuse with
-# the Go driver) is what the difference is FOR.
-FLIGHT_URLS = {"ip": "grpc://127.0.0.1:32010", "hostname": "grpc://localhost:32010"}
+# What the hostname arm measures. The ADBC Flight SQL driver is Go; for a HOSTNAME
+# its resolver issues real DNS queries (grpc-go's resolver, not getaddrinfo, so
+# /etc/hosts does not short-circuit it), and Go's per-query DNS timeout is 5 s --
+# one dropped UDP response = +5.05 s connect, two = +10.1 s, which is exactly the
+# 5.2/10.1 s outlier signature in earlier sessions (softclient4es-arrow#151).
+#
+# ⚠️ IT IS A DRIVER DEFECT, NOT THE OTHER HALF OF A FAIR COMPARISON. Trino's
+# clients dial a name too and pay ~nothing for it (whole connect 1.8 ms), because
+# they use the OS resolver. So "both dial a name" would not equalise anything --
+# it would put a third-party Go resolver inside the one scenario whose job is to
+# show that at 100 rows the wire format stops mattering. Recorded cost, this
+# harness, medians of 5: connect 33.4 ms by name against 12.7 ms by literal, i.e.
+# ≈21 ms. (An earlier 60-connect bring-up probe suggested ~90 ms; it was never a
+# recorded run and must not be quoted -- the arm above is.)
+#
+# `--dial hostname` stays so the defect is measurable on demand and its cost is
+# attributable. It is published as a DEPLOYMENT note, never as a scenario.
+FLIGHT_URLS = {"ip": f"grpc://{HOST}:32010", "hostname": "grpc://localhost:32010"}
 FLIGHT_URL = FLIGHT_URLS["ip"]
 SCENARIOS = ["S1", "S1m", "S1r", "S2", "S3", "S4"]
 
@@ -129,7 +136,6 @@ def run(scenario, index, dtype_backend="default", frame="pandas", dial="ip"):
 
 
 if __name__ == "__main__":
-    guard_environment()
     p = argparse.ArgumentParser()
     p.add_argument("--scenario", required=True, choices=SCENARIOS)
     p.add_argument("--index", default=DEFAULT_INDEX)
@@ -144,6 +150,11 @@ if __name__ == "__main__":
                         "cost rather than avoided silently")
     p.add_argument("--out")
     a = p.parse_args()
+    # Parse BEFORE guarding: the memory floor is sized to the scenario about to
+    # run (scenarios.min_available_gb), and a flat floor sized for the heaviest
+    # arm in the matrix refuses light ones for no reason -- it blocked an S4
+    # re-run on 2026-08-17 over an arm whose client holds 83 MB.
+    guard_environment(a.scenario)
     assert a.scenario in EXPECTED_ROWS, a.scenario
     if a.frame == "polars" and a.dtype_backend != "default":
         raise SystemExit("--dtype-backend is a pandas concept; do not combine with --frame polars")

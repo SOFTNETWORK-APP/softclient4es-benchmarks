@@ -32,8 +32,8 @@ import subprocess
 import sys
 import time
 
-from scenarios import (ENGINE_SERVICES, REQUIRED_STACKS, SCENARIOS, stacks_for,
-                       wait_trino_cluster)
+from scenarios import (ENGINE_SERVICES, REQUIRED_STACKS, SCENARIO_PEAK_MB, SCENARIOS,
+                       guard_environment, stacks_for, wait_trino_cluster)
 
 HERE = pathlib.Path(__file__).resolve().parent
 RESULTS = HERE.parent / "results"
@@ -383,11 +383,36 @@ def main():
 
     plan = [(sc, st) for sc in a.scenarios
             for st in sorted(stacks_for(sc) & set(a.stacks))]
-    (session / "plan.json").write_text(json.dumps(
-        {"warmups": a.warmups, "runs": a.runs, "index": a.index,
-         "variant": a.variant, "plan": plan}, indent=2))
+    # APPEND, never overwrite. A session is many invocations of this script -- the
+    # published single-shard matrix is ~16 of them -- and each one used to rewrite
+    # plan.json, so the artifact left behind described only the LAST block. A reader
+    # opening a 165-run session found a plan claiming one scenario on one stack, which
+    # misdescribes the session in the one file whose whole job is to describe it.
+    plan_file = session / "plan.json"
+    prior = []
+    if plan_file.exists():
+        try:
+            existing = json.loads(plan_file.read_text())
+            prior = existing.get("invocations", []) if isinstance(existing, dict) else []
+        except (ValueError, OSError):
+            prior = []          # unreadable: record this invocation rather than lose it
+    prior.append({"warmups": a.warmups, "runs": a.runs, "index": a.index,
+                  "variant": a.variant, "argv": sys.argv[1:], "plan": plan})
+    plan_file.write_text(json.dumps(
+        {"invocations": prior,
+         "measured_runs": sum(len(i["plan"]) * i["runs"] for i in prior)}, indent=2))
     if not plan:
         sys.exit("empty plan: the requested scenarios and stacks do not intersect")
+
+    # Host fitness BEFORE the environment is touched. The loop below stops the idle
+    # engine at the top of every block, so a guard firing inside the first runner
+    # left the stack half-down -- twice on 2026-08-17, once with both engines down
+    # because an ES|QL block treats flight AND trino as idle. Check here, against
+    # the heaviest arm the plan will actually reach, and a refusal costs nothing but
+    # the message. The per-run guards stay: this one cannot see a host that degrades
+    # halfway through a two-hour session.
+    heaviest = max((sc for sc, _ in plan), key=lambda sc: SCENARIO_PEAK_MB.get(sc, 0))
+    guard_environment(heaviest)
 
     done = 0
     prefix = f"{a.variant}-" if a.variant else ""

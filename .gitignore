@@ -11,6 +11,11 @@ __pycache__/
 # is scratch.
 **/results/*/
 **/results/*.log
+# Driver transcripts only. NOT `*.json`: the loose files at results/ root include the
+# engine-quiescence gate records that RESULTS cites as provenance, and a blanket rule
+# there silently excluded the evidence for a published session.
+**/results/driver-*.out
+**/results/phase*-*.out
 **/results/summary.md
 
 # Local-only Docker override (e.g. licence injection for full-scale runs)

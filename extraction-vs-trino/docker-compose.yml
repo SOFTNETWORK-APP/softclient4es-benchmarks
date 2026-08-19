@@ -33,10 +33,15 @@ services:
       retries: 30
 
   flight-sql:
-    # The published results were measured on 0.2.5; override with SIDECAR_TAG in .env to
+    # The published results were measured on 0.2.5.1; override with SIDECAR_TAG in .env to
     # measure a different image. Each session records the resolved image digest in
     # results/<session>/sidecar-image.txt.
-    image: softnetwork/softclient4es8-arrow-flight-sql:${SIDECAR_TAG:-0.2.5}
+    #
+    # ⚠️ 0.2.5 vs 0.2.5.1 is NOT a cosmetic bump for this benchmark. On 0.2.5 the Flight
+    # schema probe re-ran the user's whole statement whenever it already carried a LIMIT
+    # (arrow#163), so every bounded extraction read its rows off Elasticsearch TWICE.
+    # S1m is the cell that moves; do not blend figures across the two tags.
+    image: softnetwork/softclient4es8-arrow-flight-sql:${SIDECAR_TAG:-0.2.5.1}
     depends_on:
       elasticsearch:
         condition: service_healthy
@@ -137,10 +142,14 @@ services:
       #   ARROW_BATCH_SIZE=5000 docker compose up -d flight-sql   # our tuned arm
       #   run_trino.py --catalog elasticsearch_tuned              # their tuned arm
       #
-      # Verified on the released 0.2.5 image that values above 4,032 work (arrow#143's
-      # non-growing-vector cap is fixed in it): 9,000 rows came back in 2 batches at
-      # ARROW_BATCH_SIZE=5000. Without that fix the tuned arm could only have tuned
-      # Trino, so this is what makes the symmetric comparison possible at all.
+      # Values above 4,032 work (arrow#143's non-growing-vector cap is fixed): 9,000
+      # rows came back in 2 batches at ARROW_BATCH_SIZE=5000. ⚠️ That check was run at
+      # bring-up on 0.2.5 and has NOT been repeated on the published 0.2.5.1 image --
+      # no tuned-sidecar arm exists in the current session, whose only tuned arm is
+      # Trino's. The fix is present in both images, so the statement holds; it is
+      # attributed to the build that actually measured it rather than upgraded to the
+      # published one. Without that fix the tuned arm could only have tuned Trino, so
+      # this is what makes the symmetric comparison possible at all.
       - ARROW_BATCH_SIZE=${ARROW_BATCH_SIZE:-1000}
       #
       # NO licence env is wired here on purpose: as committed, this service runs on

@@ -1,0 +1,8 @@
+{
+  "engine": "trino",
+  "mode": "full",
+  "cap": "4g",
+  "verdict": "OOM-KILLED",
+  "exit_code": 137,
+  "payload": null
+}

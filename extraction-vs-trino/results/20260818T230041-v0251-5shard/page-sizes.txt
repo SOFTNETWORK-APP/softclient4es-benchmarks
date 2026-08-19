@@ -1,0 +1,4 @@
+ARROW_BATCH_SIZE=1000
+--- trino catalogs ---
+trino/catalog/elasticsearch.properties:elasticsearch.scroll-size=1000
+trino/catalog/elasticsearch_tuned.properties:elasticsearch.scroll-size=5000

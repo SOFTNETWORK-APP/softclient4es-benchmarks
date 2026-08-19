@@ -44,11 +44,11 @@ import resource
 import time
 import urllib.request
 
-from scenarios import (COLUMNS, DEFAULT_INDEX, check, emit, guard_environment,
+from scenarios import (COLUMNS, DEFAULT_INDEX, HOST, check, emit, guard_environment,
                        host_load, memory_pressure, net_bytes, net_delta,
                        peak_footprint_mb, peak_rss_mb)
 
-ES = "http://localhost:9200"
+ES = f"http://{HOST}:9200"
 PAGE = 1000            # == ARROW_BATCH_SIZE == elasticsearch.scroll-size
 SCROLL_TTL = "5m"
 # One slice per shard of the 5-shard topology. Elasticsearch's own guidance is to
@@ -161,7 +161,6 @@ def run_sliced(index, slices=SLICES):
 
 
 if __name__ == "__main__":
-    guard_environment()
     p = argparse.ArgumentParser()
     p.add_argument("--scenario", default="S0", choices=["S0", "S0p"])
     p.add_argument("--index", default=DEFAULT_INDEX)
@@ -170,6 +169,11 @@ if __name__ == "__main__":
     p.add_argument("--variant", default="")
     p.add_argument("--out")
     a = p.parse_args()
+    # Parse BEFORE guarding: the memory floor is sized to the scenario about to
+    # run (scenarios.min_available_gb), and a flat floor sized for the heaviest
+    # arm in the matrix refuses light ones for no reason -- it blocked an S4
+    # re-run on 2026-08-17 over an arm whose client holds 83 MB.
+    guard_environment(a.scenario)
 
     before = net_bytes("elasticsearch")
     load_before = host_load()

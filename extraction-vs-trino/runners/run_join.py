@@ -24,7 +24,7 @@ import time
 import urllib.error
 import urllib.request
 
-from scenarios import (emit, guard_environment, memory_pressure, net_bytes,
+from scenarios import (HOST, emit, guard_environment, memory_pressure, net_bytes,
                        net_delta, peak_footprint_mb, peak_rss_mb)
 
 FLIGHT_URL = "grpc://127.0.0.1:32010"          # IP literal, never a hostname (arrow#151)
@@ -140,7 +140,7 @@ def run_trino(sql):
     import pandas as pd
     from sqlalchemy import create_engine
     t0, c0 = time.perf_counter(), time.process_time()
-    engine = create_engine("trino://bench@localhost:8080/elasticsearch/default")
+    engine = create_engine(f"trino://bench@{HOST}:8080/elasticsearch/default")
     conn = engine.connect()
     connect_s = time.perf_counter() - t0
     q0 = time.perf_counter()

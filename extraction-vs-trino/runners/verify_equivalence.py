@@ -32,10 +32,10 @@ import urllib.request
 import adbc_driver_flightsql.dbapi as dbapi
 from trino.dbapi import connect
 
-from scenarios import (DEFAULT_INDEX, EXPECTED_GROUPS, esql_for,
-                       guard_environment, sql_for)
+from scenarios import (DEFAULT_INDEX, EXPECTED_GROUPS, HOST, esql_for,
+                       sql_for)
 
-ES = "http://localhost:9200"
+ES = f"http://{HOST}:9200"
 # The bucket size SoftClient4ES itself emits for an un-LIMITed GROUP BY
 # (Bucket.DefaultSize since core#206 -- Elasticsearch's own search.max_buckets
 # ceiling, chosen so the cluster fails loudly instead of truncating silently).
@@ -58,6 +58,21 @@ CHECKS = [
     ("sum_amount", "SELECT SUM(amount) FROM {idx}", 1e-9),
 ]
 
+# ES|QL's half of the scalar gate, added 2026-08-17. Until then the whole-index
+# aggregates were a TWO-stack check while the S3 group values were a three-stack
+# one -- a distinction RESULTS was stating as though it did not exist.
+#
+# OPTIONAL by the same rule the runners apply to the ES|QL stack: a cluster that
+# cannot answer must still produce a clean verdict, because most sessions do not
+# measure ES|QL at all. So an unanswered leg is RECORDED and never degrades the
+# verdict -- but a leg that answers and DISAGREES is a failure like any other.
+ESQL_CHECKS = {
+    "count":      "FROM {idx} | STATS v = COUNT(*)",
+    "sum_id":     "FROM {idx} | STATS v = SUM(id)",
+    "sum_qty":    "FROM {idx} | STATS v = SUM(qty)",
+    "sum_amount": "FROM {idx} | STATS v = SUM(amount)",
+}
+
 
 def flight_scalar(sql):
     # IP literal, not "localhost": the Go driver resolves hostnames over real
@@ -74,7 +89,7 @@ def flight_scalar(sql):
 
 
 def trino_scalar(sql):
-    conn = connect(host="localhost", port=8080, user="bench",
+    conn = connect(host=HOST, port=8080, user="bench",
                    catalog="elasticsearch", schema="default")
     try:
         cur = conn.cursor()
@@ -99,7 +114,7 @@ def flight_rows(sql):
 
 
 def trino_rows(sql):
-    conn = connect(host="localhost", port=8080, user="bench",
+    conn = connect(host=HOST, port=8080, user="bench",
                    catalog="elasticsearch", schema="default")
     try:
         cur = conn.cursor()
@@ -110,6 +125,11 @@ def trino_rows(sql):
         return rows
     finally:
         conn.close()
+
+
+def esql_scalar(query):
+    rows = esql_rows(query)
+    return rows[0]["v"] if rows else None
 
 
 def esql_rows(query):
@@ -195,29 +215,91 @@ def close_enough(a, b, tolerance):
 
 
 def main():
-    guard_environment()
+    # NOT guarded on host fitness, and that is deliberate (2026-08-17). The
+    # environment guard protects TIMINGS -- it refuses a host whose memory or CPU
+    # state would make a wall clock fiction. This gate publishes NO duration: it
+    # compares values and emits a verdict. Gating it meant the correctness gate
+    # became unrunnable on a busy machine, i.e. exactly when you most want to check
+    # that two stacks still agree before spending hours measuring them. Same rule
+    # the ES|QL probes already follow. The measured runs stay guarded.
     p = argparse.ArgumentParser()
     p.add_argument("--index", default=DEFAULT_INDEX)
     p.add_argument("--out", help="write the gate's verdict as JSON (session record)")
     a = p.parse_args()
 
     failures, skipped, record = [], [], {"index": a.index}
+    # The VALUES are recorded, not only the verdict: "all stacks agreed" is a claim
+    # a reader should be able to check against the session, and a bare PASS proves
+    # only that nothing was appended to `failures`.
+    scalars = {}
+    # SoftClient4ES is the BASELINE; Trino and ES|QL are independent optional legs.
+    #
+    # Not cosmetic. The first version chained them -- `continue` on a Trino failure
+    # skipped the ES|QL leg entirely, so a session without Trino recorded a Trino
+    # skip and NO TRACE of ES|QL: not a value, not a note, not a skip. New coverage
+    # silently conditional on an unrelated stack is worse than no coverage, because
+    # the record looks complete.
+    #
+    # Each leg answers three ways, and all three are distinguished:
+    #   answered and agrees  -> recorded, verdict unaffected
+    #   answered, disagrees  -> FAILURE, whichever leg it is
+    #   did not answer       -> recorded with the reason; optional legs do not fail
+    def leg(stack, fn, baseline, tolerance, entry):
+        """Run one optional leg. Returns 'agree' | 'differ' | 'silent'."""
+        try:
+            v = fn()
+            ok = None if v is None else close_enough(baseline, v, tolerance)
+        except Exception as ex:
+            # close_enough() is INSIDE the try on purpose: it calls float() when the
+            # tolerance is non-zero, so a non-numeric answer used to raise out here
+            # and abort main() before --out was ever written, losing every result
+            # gathered so far.
+            entry[stack], entry[f"{stack}_note"] = None, f"{type(ex).__name__}: {ex}"
+            return "silent"
+        entry[stack] = v
+        if ok is None:
+            # An EMPTY answer is "cannot answer", not "disagrees". Letting None fall
+            # into close_enough() made it compare unequal and fail the gate, which
+            # contradicted this leg's own contract.
+            entry[f"{stack}_note"] = "returned no rows"
+            return "silent"
+        entry[f"flight_{stack}_agree"] = ok
+        return "agree" if ok else "differ"
+
     for name, template, tolerance in CHECKS:
         sql = template.format(idx=a.index)
         try:
             f = flight_scalar(sql)
         except Exception as e:
+            # No baseline: there is nothing for the other legs to be compared with.
             skipped.append(f"{name}: flight could not run it ({type(e).__name__}: {e})")
             continue
-        try:
-            t = trino_scalar(sql)
-        except Exception as e:
-            skipped.append(f"{name}: trino could not run it ({type(e).__name__}: {e})")
-            continue
-        ok = close_enough(f, t, tolerance)
-        print(f"{'ok  ' if ok else 'FAIL'} {name}: flight={f!r} trino={t!r}")
-        if not ok:
-            failures.append(f"{name}: flight={f!r} trino={t!r}")
+        entry = scalars[name] = {"flight": f, "tolerance": tolerance}
+
+        verdict = leg("trino", lambda: trino_scalar(sql), f, tolerance, entry)
+        if verdict == "silent":
+            skipped.append(f"{name}: trino could not run it ({entry['trino_note']})")
+        else:
+            print(f"{'ok  ' if verdict == 'agree' else 'FAIL'} {name}: "
+                  f"flight={f!r} trino={entry['trino']!r}")
+            if verdict == "differ":
+                failures.append(f"{name}: flight={f!r} trino={entry['trino']!r}")
+
+        esql_q = ESQL_CHECKS.get(name)
+        if esql_q:
+            verdict = leg("esql", lambda: esql_scalar(esql_q.format(idx=a.index)),
+                          f, tolerance, entry)
+            if verdict == "silent":
+                # OPTIONAL: most sessions never measure ES|QL, so a silent leg is
+                # recorded and does not degrade the verdict. A leg that ANSWERS and
+                # disagrees is a failure like any other.
+                print(f"note {name}: esql did not answer ({entry['esql_note']})")
+            else:
+                print(f"{'ok  ' if verdict == 'agree' else 'FAIL'} {name}: "
+                      f"flight={f!r} esql={entry['esql']!r}")
+                if verdict == "differ":
+                    failures.append(f"{name}: flight={f!r} esql={entry['esql']!r}")
+    record["scalars"] = scalars
 
     # ── S3: the push-down result, compared VALUE BY VALUE ───────────────────
     groups = {}

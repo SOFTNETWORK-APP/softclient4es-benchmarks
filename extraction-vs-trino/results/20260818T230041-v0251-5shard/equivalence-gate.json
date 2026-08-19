@@ -1,0 +1,51 @@
+{
+  "index": "bench_events_10m_s5",
+  "scalars": {
+    "count": {
+      "flight": 10000000.0,
+      "tolerance": 0,
+      "trino": 10000000,
+      "flight_trino_agree": true,
+      "esql": 10000000,
+      "flight_esql_agree": true
+    },
+    "sum_id": {
+      "flight": 49999995000000.0,
+      "tolerance": 0,
+      "trino": 49999995000000,
+      "flight_trino_agree": true,
+      "esql": 49999995000000,
+      "flight_esql_agree": true
+    },
+    "sum_qty": {
+      "flight": 100022935.0,
+      "tolerance": 0,
+      "trino": 100022935,
+      "flight_trino_agree": true,
+      "esql": 100022935,
+      "flight_esql_agree": true
+    },
+    "sum_amount": {
+      "flight": 5006090520.54,
+      "tolerance": 1e-09,
+      "trino": 5006090520.540035,
+      "flight_trino_agree": true,
+      "esql": 5006090520.54,
+      "flight_esql_agree": true
+    }
+  },
+  "s3_groups": {
+    "flight": 100,
+    "trino": 100,
+    "esql": 100
+  },
+  "terms_error": {
+    "buckets": 100,
+    "doc_count_error_upper_bound": 0,
+    "sum_other_doc_count": 0,
+    "terms_size": 65536
+  },
+  "failures": [],
+  "skipped": [],
+  "verdict": "PASS"
+}
