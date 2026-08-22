@@ -1200,16 +1200,30 @@ docker compose up -d flight-sql trino
   </p>
 
   <div class="note">
-    <b>Licence.</b> SoftClient4ES enforces a result-set quota by licence tier (Community 10,000 /
-    Pro 1,000,000 / Enterprise unlimited), so the full 10M rows (S1/S2) run under an
-    Enterprise-tier licence. <b>The licence lifts a row quota only — it does not change the batch
-    size, the serialization, or the data path.</b> The runners
-    assert exactly 10,000,000 rows, so a quota-capped run aborts rather than being reported — a
-    truncated result can never be published by accident. With no licence the harness runs on the
-    Community tier, which reproduces every scenario's shape at reduced (<code>--limit</code>) scale.
-    <b>To reproduce the full 10M-row scenarios</b>: a time-limited Enterprise evaluation licence for
-    deeper testing is available on request, with no contractual obligation attached — write to
-    <b>sales@softclient4es.com</b>.
+    <b>Licence — what reproduces at which tier.</b> SoftClient4ES enforces a <i>result-set</i> quota
+    by licence tier (Community 10,000 rows / Pro 1,000,000 / Enterprise unlimited). <b>The licence
+    lifts a row quota only — it does not change the batch size, the serialization, or the data
+    path</b>, and the runners assert exact row counts, so a quota-capped run aborts rather than
+    being reported: a truncated result can never be published by accident. The quota applies to the
+    rows <i>returned</i>, not the rows read, which makes the free reach larger than the tier names
+    suggest.
+    <ul style="margin:3mm 0 2mm; padding-left:5mm">
+      <li><b>With no licence at all (Community).</b> <b>S3</b> — the push-down, and the one number
+        this report asks a reader to take away — returns 100 rows from an aggregation the cluster
+        computes, and aggregation-shaped queries carry no row cap at all. <b>S4</b> runs, and so
+        does <b>J2</b> (100 rows out, one join against a Community allowance of two). Every other
+        scenario reproduces at reduced <code>--limit</code> scale. <b>The structural result is
+        verifiable without asking anyone for anything.</b></li>
+      <li><b>With the 30-day Pro trial</b> — self-service from the licence portal, no credit card,
+        one per account: <b>S1m</b> (1,000,000 rows) and the cross-index joins — <b>J1</b> (125,044
+        rows out) and <b>J0</b>, whose 1,000,000-row output sits exactly on the Pro ceiling, which
+        the cap admits because it truncates only <i>above</i> the quota. That covers every cell
+        where Trino wins or ties.</li>
+      <li><b>Enterprise</b> — the ten-million-row extraction cells: S1, S1r, S2, S5, S6. A
+        <b>time-limited evaluation licence</b> for those, with no contractual obligation attached,
+        is requested from your account on the pricing page of the licence portal.</li>
+    </ul>
+    <b>portal.softclient4es.com/pricing</b>
   </div>
 </section>
 
@@ -1416,18 +1430,19 @@ docker compose up -d flight-sql trino
       container</b>, while the rest run it natively on macOS. Wall-clock is comparable within each
       group and only indicative across them, and the peak-memory metric changes with the platform.</li>
     <li><b>The ten-million-row scenarios are not reproducible on the Community tier.</b> They require
-      a licence whose result quota exceeds 10M. A third party can reproduce every scenario's shape at
-      reduced scale, and S1m/S3/S4 exactly, but cannot independently re-run the headline extraction
-      without one. What is available instead of a re-run is the evidence: <b>every measured run of
+      a licence whose result quota exceeds 10M — S1, S1r, S2, S5 and S6. Everything else is open:
+      <b>S3, S4 and J2 reproduce with no licence at all</b>, and the self-service 30-day Pro trial
+      covers S1m and the remaining joins (§9 sets out the full ladder). So what a third party cannot
+      re-run independently is the headline extraction, not the structural result. What is available instead of a re-run is the evidence: <b>every measured run of
       every session is published in the repository</b> under <code>results/&lt;session&gt;/</code> —
       one JSON per run carrying its wall, CPU, memory, wire bytes, host load and memory-pressure
       reading, alongside the equivalence gate, the ES|QL truncation and join probes, the connect
       probe, the engine-quiescence records and the sidecar image digest. The dispersion behind every
       median, the gates that had to pass before a number was kept, and the state of the host while
       it was measured are all auditable without a licence. That is not reproduction, and it is not
-      nothing — and reproduction itself is a request away: a time-limited Enterprise evaluation
-      licence is available by writing to <b>sales@softclient4es.com</b> (§9), no contractual
-      obligation attached.</li>
+      nothing — and reproduction of those five cells is a request away: a time-limited
+      Enterprise evaluation licence, with no contractual obligation attached, is requested from your
+      account on the licence portal (§9).</li>
     <li><b>The headline gap is mostly shard parallelism, and it is a recent gain rather than an
       architectural constant.</b> The main results run on a 6-shard index, where Trino's connector
       gets six real splits across two workers (verified live) and our client opens six concurrent

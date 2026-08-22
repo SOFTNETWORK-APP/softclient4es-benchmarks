@@ -1029,15 +1029,26 @@ settings rather than container settings, and they do not survive `docker compose
   `generator/select_topology.py` opens exactly one of the two 10M indices so neither sits in the
   other's page cache.
 
-**Licensing.** Extracting the full 10M rows (S1/S2) requires a licence tier whose result-set quota
-exceeds 10M; the licence changes a quota only, not the data path, the batch size or the wire format.
-With no licence the harness runs on the Community tier, which reproduces every scenario's shape at
-reduced (`--limit`) scale — and the runners assert exact row counts, so a quota-truncated run aborts
-rather than reporting a fast, wrong number.
+**Licensing — what reproduces at which tier.** SoftClient4ES enforces a *result-set* quota by
+licence tier (Community 10,000 rows / Pro 1,000,000 / Enterprise unlimited). **The licence lifts a
+row quota only — it does not change the data path, the batch size or the wire format**, and the
+runners assert exact row counts, so a quota-truncated run aborts rather than reporting a fast, wrong
+number. The quota applies to the rows *returned*, not the rows read, which makes the free reach
+larger than the tier names suggest:
 
-**To reproduce the full 10M-row scenarios**: a time-limited Enterprise evaluation licence for
-deeper testing is available on request, with no contractual obligation attached — write to
-**sales@softclient4es.com**.
+- **With no licence at all (Community).** **S3** — the push-down, and the one number this document
+  asks a reader to take away — returns 100 rows from an aggregation the cluster computes, and
+  aggregation-shaped queries carry no row cap at all. **S4** runs, and so does **J2** (100 rows
+  out, one join against a Community allowance of two). Every other scenario reproduces at reduced
+  (`--limit`) scale. **The structural result is verifiable without asking anyone for anything.**
+- **With the 30-day Pro trial** — self-service from the licence portal, no credit card, one per
+  account: **S1m** (1,000,000 rows) and the cross-index joins — **J1** (125,044 rows out) and
+  **J0**, whose 1,000,000-row output sits exactly on the Pro ceiling, which the cap admits because
+  it truncates only *above* the quota. That covers every cell where Trino wins or ties.
+- **Enterprise** — the ten-million-row extraction cells: S1, S1r, S2, S5, S6. A **time-limited
+  evaluation licence** for those, with no contractual obligation attached, is requested from your
+  account on the pricing page of the licence portal:
+  <https://portal.softclient4es.com/pricing>.
 
 ⚠️ **From extensions 0.3.0 onward a self-signed licence no longer verifies.** Licence signatures are
 checked against a trust root compiled into the artifact, and `SOFTCLIENT4ES_LICENSE_PUBLIC_KEY` is
