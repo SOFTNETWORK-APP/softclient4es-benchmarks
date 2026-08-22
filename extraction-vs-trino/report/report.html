@@ -1202,8 +1202,9 @@ docker compose up -d flight-sql trino
   <div class="note">
     <b>Licence — what reproduces at which tier.</b> SoftClient4ES enforces a <i>result-set</i> quota
     by licence tier (Community 10,000 rows / Pro 1,000,000 / Enterprise unlimited). <b>The licence
-    lifts a row quota only — it does not change the batch size, the serialization, or the data
-    path</b>, and the runners assert exact row counts, so a quota-capped run aborts rather than
+    lifts a row quota only — it does not change the batch size, the serialization, or the data path,
+    and it is not per seat: it is issued to an organisation, whatever the number of users behind
+    it</b>, and the runners assert exact row counts, so a quota-capped run aborts rather than
     being reported: a truncated result can never be published by accident. The quota applies to the
     rows <i>returned</i>, not the rows read, which makes the free reach larger than the tier names
     suggest.

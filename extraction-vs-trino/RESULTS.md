@@ -1031,7 +1031,8 @@ settings rather than container settings, and they do not survive `docker compose
 
 **Licensing — what reproduces at which tier.** SoftClient4ES enforces a *result-set* quota by
 licence tier (Community 10,000 rows / Pro 1,000,000 / Enterprise unlimited). **The licence lifts a
-row quota only — it does not change the data path, the batch size or the wire format**, and the
+row quota only — it does not change the data path, the batch size or the wire format, and it is not
+per seat: it is issued to an organisation, whatever the number of users behind it**, and the
 runners assert exact row counts, so a quota-truncated run aborts rather than reporting a fast, wrong
 number. The quota applies to the rows *returned*, not the rows read, which makes the free reach
 larger than the tier names suggest:
