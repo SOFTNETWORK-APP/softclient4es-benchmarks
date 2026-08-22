@@ -1,0 +1,18 @@
+{
+  "engine": "trino",
+  "mode": "full-cx",
+  "cap": "6g",
+  "verdict": "completed",
+  "exit_code": 0,
+  "payload": {
+    "engine": "trino",
+    "mode": "full-cx",
+    "cap": "6g",
+    "outcome": "completed",
+    "rows": 10000000,
+    "wall_s": 12.657133089000126,
+    "cpu_s": 11.10573345,
+    "peak_rss_mb": 2914.17578125,
+    "rows_ok": true
+  }
+}

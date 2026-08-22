@@ -1,0 +1,11 @@
+# Post-hoc read of cumulative cgroup cpu.stat, 2026-08-21T03:15 local
+# Containers started 2026-08-20T19:02Z — the window covers EVERY session of the
+# evening (main, capped, concurrent, joins, 1-shard, sliced A/B) plus idle time.
+# Cumulative counters cannot be attributed to a single run or session; they
+# BOUND throttling over the whole window. Per-run capture ships with the
+# harness from this date (scenarios.server_cpu_sample).
+extraction-vs-trino-elasticsearch-1    usage_usec 5330001434  nr_throttled 2749  throttled_usec 65076919   (1.22% of used)
+extraction-vs-trino-elasticsearch-2-1  usage_usec 4174527586  nr_throttled 381   throttled_usec 13243466   (0.32% of used)
+extraction-vs-trino-elasticsearch-3-1  usage_usec 4420928650  nr_throttled 73    throttled_usec 1502553    (0.03% of used)
+# Sidecar and Trino containers were recreated/stopped during the evening; their
+# cgroups are gone and their counters cannot be reconstructed.

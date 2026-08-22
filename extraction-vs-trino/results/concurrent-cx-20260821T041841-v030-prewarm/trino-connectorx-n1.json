@@ -1,0 +1,20 @@
+{
+  "engine": "trino",
+  "route": "connectorx",
+  "n": 1,
+  "cap_mb": 8192,
+  "budget_gib": 8.0,
+  "completed": 1,
+  "total_wall_s": 13.591354917007266,
+  "runs": [
+    {
+      "idx": 0,
+      "route": "connectorx",
+      "outcome": "completed",
+      "exit_code": 0,
+      "wall_s": 13.36044388099981,
+      "peak_rss_mb": 2915.19140625,
+      "rows": 10000000
+    }
+  ]
+}

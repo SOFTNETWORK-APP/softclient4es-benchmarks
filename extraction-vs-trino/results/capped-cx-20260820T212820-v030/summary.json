@@ -1,0 +1,82 @@
+[
+  {
+    "engine": "trino",
+    "mode": "full-cx",
+    "cap": "8g",
+    "verdict": "completed",
+    "exit_code": 0,
+    "payload": {
+      "engine": "trino",
+      "mode": "full-cx",
+      "cap": "8g",
+      "outcome": "completed",
+      "rows": 10000000,
+      "wall_s": 13.861077380999632,
+      "cpu_s": 11.744060032999998,
+      "peak_rss_mb": 2910.26953125,
+      "rows_ok": true
+    }
+  },
+  {
+    "engine": "trino",
+    "mode": "full-cx",
+    "cap": "6g",
+    "verdict": "completed",
+    "exit_code": 0,
+    "payload": {
+      "engine": "trino",
+      "mode": "full-cx",
+      "cap": "6g",
+      "outcome": "completed",
+      "rows": 10000000,
+      "wall_s": 12.786823963999268,
+      "cpu_s": 11.253185432,
+      "peak_rss_mb": 2909.13671875,
+      "rows_ok": true
+    }
+  },
+  {
+    "engine": "trino",
+    "mode": "full-cx",
+    "cap": "4g",
+    "verdict": "completed",
+    "exit_code": 0,
+    "payload": {
+      "engine": "trino",
+      "mode": "full-cx",
+      "cap": "4g",
+      "outcome": "completed",
+      "rows": 10000000,
+      "wall_s": 12.604475337999247,
+      "cpu_s": 11.198577208,
+      "peak_rss_mb": 2916.84765625,
+      "rows_ok": true
+    }
+  },
+  {
+    "engine": "trino",
+    "mode": "full-cx",
+    "cap": "3g",
+    "verdict": "completed",
+    "exit_code": 0,
+    "payload": {
+      "engine": "trino",
+      "mode": "full-cx",
+      "cap": "3g",
+      "outcome": "completed",
+      "rows": 10000000,
+      "wall_s": 12.837949714001297,
+      "cpu_s": 11.350773596,
+      "peak_rss_mb": 2908.81640625,
+      "rows_ok": true
+    }
+  },
+  {
+    "engine": "trino",
+    "mode": "full-cx",
+    "cap": "2g",
+    "verdict": "OOM-KILLED",
+    "exit_code": 137,
+    "payload": null
+  }
+]

@@ -1,0 +1,2 @@
+repo_digests=[softnetwork/softclient4es8-arrow-flight-sql@sha256:9dd80b77f62e86bd210735e57bbf49e34248f6ccef9459f8741b64373ec9259d]
+created=2026-08-20T14:33:14.786428214Z

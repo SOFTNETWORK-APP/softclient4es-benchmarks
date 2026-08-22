@@ -1,0 +1,44 @@
+{
+  "invocations": [
+    {
+      "warmups": 2,
+      "runs": 5,
+      "index": "bench_events_10m_s1",
+      "variant": "1shard",
+      "argv": [
+        "--session",
+        "results/20260821T041841-v030-prewarm-1shard",
+        "--stop-idle-engine",
+        "--index",
+        "bench_events_10m_s1",
+        "--variant",
+        "1shard",
+        "--stacks",
+        "flight",
+        "trino",
+        "--scenarios",
+        "S1",
+        "S3"
+      ],
+      "plan": [
+        [
+          "S1",
+          "flight"
+        ],
+        [
+          "S1",
+          "trino"
+        ],
+        [
+          "S3",
+          "flight"
+        ],
+        [
+          "S3",
+          "trino"
+        ]
+      ]
+    }
+  ],
+  "measured_runs": 20
+}

@@ -1,0 +1,19 @@
+{
+  "engine": "trino",
+  "mode": "chunked",
+  "cap": "8g",
+  "verdict": "completed",
+  "exit_code": 0,
+  "payload": {
+    "engine": "trino",
+    "mode": "chunked",
+    "cap": "8g",
+    "outcome": "completed",
+    "rows": 10000000,
+    "wall_s": 58.54306106800141,
+    "cpu_s": 39.483567667,
+    "peak_rss_mb": 312.0078125,
+    "rows_ok": true,
+    "chunksize": 100000
+  }
+}

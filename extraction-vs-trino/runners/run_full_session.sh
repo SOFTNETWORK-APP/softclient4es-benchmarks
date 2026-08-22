@@ -51,10 +51,88 @@ run() {
 say "session $SESSION"
 
 # ── 0. correctness before timing ─────────────────────────────────────────────
-run $PY runners/verify_equivalence.py --out "$SESSION/equivalence-gate.json"
-if ! grep -q '"verdict": "PASS' "$SESSION/equivalence-gate.json" 2>/dev/null; then
-  say "equivalence gate did not PASS -- refusing to measure"; exit 1
+# Engines FIRST. The gate is the only step that runs before any orchestrator, and an
+# orchestrator is the only thing that ever started Trino -- so on 2026-08-20 the gate
+# ran against a stopped Trino, skipped every Trino leg, and still reported PASS.
+run $PY runners/ensure_engines.py
+if ! grep -q "the Trino cluster has assembled" "$LOG"; then
+  say "engines did not come up -- refusing to measure"; exit 1
 fi
+
+run $PY runners/verify_equivalence.py --out "$SESSION/equivalence-gate.json"
+# Parse the verdict; do NOT grep it. `grep '"verdict": "PASS'` has no closing quote,
+# so it also matches "PASS_WITH_SKIPS" -- a gate in which a whole engine was skipped
+# read as a pass. A skipped leg is the ABSENCE of evidence, and for the two engines
+# this session actually times, absence is disqualifying. ES|QL is best-effort by
+# design (it cannot express several scenarios), so its skips are recorded, not fatal.
+if ! $PY - "$SESSION/equivalence-gate.json" <<'EOF'
+import json, sys
+rec = json.load(open(sys.argv[1]))
+timed = ("flight", "trino")
+blocking = [s for s in rec.get("skipped", [])
+            if any(f"{t} could not" in s or s.startswith(f"{t}:")
+                   or f"/{t}:" in s or f"/{t} " in s for t in timed)]
+if rec.get("verdict") == "FAIL":
+    print(f"gate FAILED: {rec.get('failures')}"); sys.exit(1)
+if blocking:
+    print("gate did not cover an engine this session measures:")
+    for s in blocking:
+        print(f"  SKIPPED  {s}")
+    sys.exit(1)
+print(f"gate verdict {rec.get('verdict')}; "
+      f"{len(rec.get('skipped', []))} non-blocking skip(s)")
+EOF
+then
+  say "equivalence gate did not cover both timed engines -- refusing to measure"; exit 1
+fi
+
+# ── 0b. warm the corpus to STEADY STATE before the first timed block ─────────
+# Review 2026-08-21, point 1.1: the v030 session's first engine block measured
+# 13.07 s where the same cell measured 9.78 s at session end -- a gradual
+# cluster-side warm-in whose mechanism is not established (NOT a cold page cache:
+# two warm-ups already preceded the first timed run, and Elasticsearch CPU was
+# still declining after SEVEN full reads, 50.2 -> 45.4 s). So a fixed pass count
+# is exactly the mistake already made once; instead, warm until the cluster says
+# it is warm: full untimed extractions until the per-pass Elasticsearch CPU
+# changes by <5% twice in a row (max 12 passes -- ~2 min). The evidence lands in
+# warm-in.json, and the drift control at the END of the session is the check
+# that this worked: if S1 drift still exceeds the block's own spread, the
+# session's early blocks may not be published.
+say "warming the corpus to steady state before the first timed block"
+if ! $PY - "$SESSION" >>"$LOG" 2>&1 <<'EOF'
+import json, sys, time
+sys.path.insert(0, "runners")
+from scenarios import server_cpu_sample, server_cpu_delta
+import adbc_driver_flightsql.dbapi as dbapi
+
+passes, stable = [], 0
+for i in range(12):
+    before = server_cpu_sample([])
+    t0 = time.perf_counter()
+    with dbapi.connect("grpc://127.0.0.1:32010") as c, c.cursor() as cur:
+        cur.execute("SELECT id, event_ts, amount, qty, status, country, category, name "
+                    "FROM bench_events_10m")
+        rows = cur.fetch_arrow_table().num_rows
+    wall = time.perf_counter() - t0
+    es = (server_cpu_delta(before, server_cpu_sample([])) or {}).get("elasticsearch_cpu_s")
+    passes.append({"pass": i + 1, "rows": rows, "wall_s": round(wall, 2),
+                   "elasticsearch_cpu_s": es})
+    print(f"warm pass {i+1}: {rows} rows, wall {wall:.2f} s, ES CPU {es} s", flush=True)
+    assert rows == 10_000_000, rows
+    if len(passes) >= 2 and es and passes[-2]["elasticsearch_cpu_s"]:
+        prev = passes[-2]["elasticsearch_cpu_s"]
+        stable = stable + 1 if abs(es - prev) / prev < 0.05 else 0
+        if stable >= 2:
+            print(f"steady state after {i+1} passes", flush=True)
+            break
+json.dump({"passes": passes, "steady": stable >= 2},
+          open(sys.argv[1] + "/warm-in.json", "w"), indent=1)
+sys.exit(0 if stable >= 2 else 1)
+EOF
+then
+  say "corpus did NOT reach steady state in 12 passes -- refusing to measure"; exit 1
+fi
+say "corpus warmed to steady state (see warm-in.json)"
 
 O="$PY runners/orchestrate.py --session $SESSION --stop-idle-engine"
 
@@ -97,7 +175,11 @@ run $O --stacks flight --scenarios S4 --dial hostname
 run $PY runners/probe_connect.py --repeat 30 --out "$SESSION/connect-probe.json"
 
 # ── 7. drift LAST: how far did the machine move under the session? ───────────
-run $O --scenarios S1 --drift-scenarios S1 --stacks flight
+# BOTH engines. v030's lesson, written in RESULTS and then not codified here: a
+# drift arm for one engine proves nothing about the other -- the asymmetry (we
+# moved 25%, Trino 0.3%) WAS the finding. The 2026-08-21 session ran flight-only
+# from this script and Trino's arm had to be appended by hand.
+run $O --scenarios S1 --drift-scenarios S1 --stacks flight trino
 
 say "matrix complete -- summarizing"
 # summarize.py PRINTS the report; it does not write it. run() sends stdout to the

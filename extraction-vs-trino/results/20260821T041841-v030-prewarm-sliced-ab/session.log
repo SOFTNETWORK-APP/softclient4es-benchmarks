@@ -1,0 +1,181 @@
+
+=== 09:55:53 === phase 4 -- sliced vs sequential, session results/20260821T041841-v030-prewarm-sliced-ab
+
+=== 09:55:53 === pass 1/2 (INFO): observing the paging decision at ELASTIC_SCROLL_MAX_SLICES=1
+ Container extraction-vs-trino-elasticsearch-1 Running 
+ Container extraction-vs-trino-flight-sql-1 Recreate 
+ Container extraction-vs-trino-flight-sql-1 Recreated 
+ Container extraction-vs-trino-elasticsearch-1 Waiting 
+ Container extraction-vs-trino-elasticsearch-1 Healthy 
+ Container extraction-vs-trino-flight-sql-1 Starting 
+ Container extraction-vs-trino-flight-sql-1 Started 
+[engines] elasticsearch healthy
+[engines] elasticsearch-2 healthy
+[engines] elasticsearch-3 healthy
+[engines] flight-sql healthy
+[engines] trino healthy
+[engines] trino-worker-1 healthy
+[engines] trino-worker-2 healthy
+Trino cluster ready: 3 active nodes (2 workers: 6ef3f8ddf30a, f3f2a59b9ea5)
+[engines] esql.query.result_truncation_max_size=1000000 (already at the ceiling)
+[engines] all engines up and the Trino cluster has assembled
+/Users/smanciot/git/softnetwork-app/softclient4es-benchmarks/extraction-vs-trino/.venv/lib/python3.12/site-packages/adbc_driver_manager/dbapi.py:369: Warning: Cannot disable autocommit; conn will not be DB-API 2.0 compliant
+  warnings.warn(
+probe rows: 10000000
+
+=== 09:56:31 === observed: flight-sql-1  | 2026-08-21 07:56:31.486 INFO  [elastic-arrow-flight-akka.actor.default-dispatcher-6] a.s.e.c.spi.JavaClientSpi$$anon$1 - PIT search_after completed (1 slice(s)), closing PIT: xcabBAYQYmVuY2hfZXZl...
+
+=== 09:56:31 === pass 2/2 (WARN): recreating for measurement
+ Container extraction-vs-trino-elasticsearch-1 Running 
+ Container extraction-vs-trino-flight-sql-1 Recreate 
+ Container extraction-vs-trino-flight-sql-1 Recreated 
+ Container extraction-vs-trino-elasticsearch-1 Waiting 
+ Container extraction-vs-trino-elasticsearch-1 Healthy 
+ Container extraction-vs-trino-flight-sql-1 Starting 
+ Container extraction-vs-trino-flight-sql-1 Started 
+[engines] elasticsearch healthy
+[engines] elasticsearch-2 healthy
+[engines] elasticsearch-3 healthy
+[engines] flight-sql healthy
+[engines] trino healthy
+[engines] trino-worker-1 healthy
+[engines] trino-worker-2 healthy
+Trino cluster ready: 3 active nodes (2 workers: 6ef3f8ddf30a, f3f2a59b9ea5)
+[engines] esql.query.result_truncation_max_size=1000000 (already at the ceiling)
+[engines] all engines up and the Trino cluster has assembled
+
+=== 09:56:39 === measuring with ELASTIC_SCROLL_MAX_SLICES=1 at WARN
+/Users/smanciot/git/softnetwork-app/softclient4es-benchmarks/extraction-vs-trino/.venv/lib/python3.12/site-packages/adbc_driver_manager/dbapi.py:369: Warning: Cannot disable autocommit; conn will not be DB-API 2.0 compliant
+  warnings.warn(
+warm rows: 10000000
+warm rows: 10000000
+
+=== 09:57:55 === .venv/bin/python runners/orchestrate.py --session results/20260821T041841-v030-prewarm-sliced-ab --stop-idle-engine --variant sequential --stacks flight --scenarios S1 S2 S3 S4
+session: results/20260821T041841-v030-prewarm-sliced-ab
+[flight S1] warmup 1/2
+[flight S1] warmup 2/2
+[flight S1] run 1/5
+[flight S1] run 2/5
+[flight S1] run 3/5
+[flight S1] run 4/5
+[flight S1] run 5/5
+[flight S2] warmup 1/2
+[flight S2] warmup 2/2
+[flight S2] run 1/5
+[flight S2] run 2/5
+[flight S2] run 3/5
+[flight S2] run 4/5
+[flight S2] run 5/5
+[flight S3] warmup 1/2
+[flight S3] warmup 2/2
+[flight S3] run 1/5
+[flight S3] run 2/5
+[flight S3] run 3/5
+[flight S3] run 4/5
+[flight S3] run 5/5
+[flight S4] warmup 1/2
+[flight S4] warmup 2/2
+[flight S4] run 1/5
+[flight S4] run 2/5
+[flight S4] run 3/5
+[flight S4] run 4/5
+[flight S4] run 5/5
+
+completed 20 measured run(s)
+session: results/20260821T041841-v030-prewarm-sliced-ab
+
+=== 10:07:22 === pass 1/2 (INFO): observing the paging decision at ELASTIC_SCROLL_MAX_SLICES=8
+ Container extraction-vs-trino-elasticsearch-1 Running 
+ Container extraction-vs-trino-flight-sql-1 Recreate 
+ Container extraction-vs-trino-flight-sql-1 Recreated 
+ Container extraction-vs-trino-elasticsearch-1 Waiting 
+ Container extraction-vs-trino-elasticsearch-1 Healthy 
+ Container extraction-vs-trino-flight-sql-1 Starting 
+ Container extraction-vs-trino-flight-sql-1 Started 
+[engines] elasticsearch healthy
+[engines] elasticsearch-2 healthy
+[engines] elasticsearch-3 healthy
+[engines] flight-sql healthy
+[engines] trino healthy
+[engines] trino-worker-1 healthy
+[engines] trino-worker-2 healthy
+Trino cluster ready: 3 active nodes (2 workers: 6ef3f8ddf30a, f3f2a59b9ea5)
+[engines] esql.query.result_truncation_max_size=1000000 (already at the ceiling)
+[engines] all engines up and the Trino cluster has assembled
+/Users/smanciot/git/softnetwork-app/softclient4es-benchmarks/extraction-vs-trino/.venv/lib/python3.12/site-packages/adbc_driver_manager/dbapi.py:369: Warning: Cannot disable autocommit; conn will not be DB-API 2.0 compliant
+  warnings.warn(
+probe rows: 10000000
+
+=== 10:07:51 === observed: flight-sql-1  | 2026-08-21 08:07:51.499 INFO  [elastic-arrow-flight-akka.actor.default-dispatcher-6] a.s.e.c.spi.JavaClientSpi$$anon$1 - PIT search_after completed (6 slice(s)), closing PIT: xcabBAYQYmVuY2hfZXZl...
+
+=== 10:07:51 === pass 2/2 (WARN): recreating for measurement
+ Container extraction-vs-trino-elasticsearch-1 Running 
+ Container extraction-vs-trino-flight-sql-1 Recreate 
+ Container extraction-vs-trino-flight-sql-1 Recreated 
+ Container extraction-vs-trino-elasticsearch-1 Waiting 
+ Container extraction-vs-trino-elasticsearch-1 Healthy 
+ Container extraction-vs-trino-flight-sql-1 Starting 
+ Container extraction-vs-trino-flight-sql-1 Started 
+[engines] elasticsearch healthy
+[engines] elasticsearch-2 healthy
+[engines] elasticsearch-3 healthy
+[engines] flight-sql healthy
+[engines] trino healthy
+[engines] trino-worker-1 healthy
+[engines] trino-worker-2 healthy
+Trino cluster ready: 3 active nodes (2 workers: 6ef3f8ddf30a, f3f2a59b9ea5)
+[engines] esql.query.result_truncation_max_size=1000000 (already at the ceiling)
+[engines] all engines up and the Trino cluster has assembled
+
+=== 10:07:59 === measuring with ELASTIC_SCROLL_MAX_SLICES=8 at WARN
+/Users/smanciot/git/softnetwork-app/softclient4es-benchmarks/extraction-vs-trino/.venv/lib/python3.12/site-packages/adbc_driver_manager/dbapi.py:369: Warning: Cannot disable autocommit; conn will not be DB-API 2.0 compliant
+  warnings.warn(
+warm rows: 10000000
+warm rows: 10000000
+
+=== 10:08:22 === .venv/bin/python runners/orchestrate.py --session results/20260821T041841-v030-prewarm-sliced-ab --stop-idle-engine --variant sliced --stacks flight --scenarios S1 S2 S3 S4
+session: results/20260821T041841-v030-prewarm-sliced-ab
+[flight S1] warmup 1/2
+[flight S1] warmup 2/2
+[flight S1] run 1/5
+[flight S1] run 2/5
+[flight S1] run 3/5
+[flight S1] run 4/5
+[flight S1] run 5/5
+[flight S2] warmup 1/2
+[flight S2] warmup 2/2
+[flight S2] run 1/5
+[flight S2] run 2/5
+[flight S2] run 3/5
+[flight S2] run 4/5
+[flight S2] run 5/5
+[flight S3] warmup 1/2
+[flight S3] warmup 2/2
+[flight S3] run 1/5
+[flight S3] run 2/5
+[flight S3] run 3/5
+[flight S3] run 4/5
+[flight S3] run 5/5
+[flight S4] warmup 1/2
+[flight S4] warmup 2/2
+[flight S4] run 1/5
+[flight S4] run 2/5
+[flight S4] run 3/5
+[flight S4] run 4/5
+[flight S4] run 5/5
+
+completed 20 measured run(s)
+session: results/20260821T041841-v030-prewarm-sliced-ab
+
+=== 10:12:11 === restoring the shipped sidecar configuration
+ Container extraction-vs-trino-elasticsearch-1 Running 
+ Container extraction-vs-trino-flight-sql-1 Recreate 
+ Container extraction-vs-trino-flight-sql-1 Recreated 
+ Container extraction-vs-trino-elasticsearch-1 Waiting 
+ Container extraction-vs-trino-elasticsearch-1 Healthy 
+ Container extraction-vs-trino-flight-sql-1 Starting 
+ Container extraction-vs-trino-flight-sql-1 Started 
+
+=== 10:12:12 === wrote results/20260821T041841-v030-prewarm-sliced-ab/summary.md
+
+=== 10:12:12 === DONE  phase 4 (results/20260821T041841-v030-prewarm-sliced-ab)

@@ -1,0 +1,131 @@
+
+=== 07:59:12 === phase 3 -- 1-shard sensitivity, session results/20260821T041841-v030-prewarm-1shard
+
+=== 07:59:12 === .venv/bin/python generator/select_topology.py --index bench_events_10m_s1
+closed  bench_events_10m
+opened  bench_events_10m_s1
+
+resident topology -> bench_events_10m_s1 (1 shard(s))
+
+  closed  bench_events_10m                        -             - docs
+  OPEN    bench_events_10m_s1            1 shard(s)      10000000 docs
+
+=== 07:59:13 === .venv/bin/python runners/ensure_engines.py
+[engines] elasticsearch healthy
+[engines] elasticsearch-2 healthy
+[engines] elasticsearch-3 healthy
+[engines] flight-sql healthy
+[engines] trino healthy
+[engines] trino-worker-1 healthy
+[engines] trino-worker-2 healthy
+Trino cluster ready: 3 active nodes (2 workers: 6ef3f8ddf30a, f3f2a59b9ea5)
+[engines] esql.query.result_truncation_max_size=1000000 (already at the ceiling)
+[engines] all engines up and the Trino cluster has assembled
+
+=== 07:59:14 === .venv/bin/python runners/verify_equivalence.py --index bench_events_10m_s1 --out results/20260821T041841-v030-prewarm-1shard/equivalence-gate.json
+/Users/smanciot/git/softnetwork-app/softclient4es-benchmarks/extraction-vs-trino/.venv/lib/python3.12/site-packages/adbc_driver_manager/dbapi.py:369: Warning: Cannot disable autocommit; conn will not be DB-API 2.0 compliant
+  warnings.warn(
+ok   count: flight=10000000.0 trino=10000000
+ok   count: flight=10000000.0 esql=10000000
+ok   sum_id: flight=49999995000000.0 trino=49999995000000
+ok   sum_id: flight=49999995000000.0 esql=49999995000000
+ok   sum_qty: flight=100022935.0 trino=100022935
+ok   sum_qty: flight=100022935.0 esql=100022935
+ok   sum_amount: flight=5006090520.54 trino=5006090520.540772
+ok   sum_amount: flight=5006090520.54 esql=5006090520.54
+S3 groups flight vs trino: 100 groups identical (counts exact, averages within 1e-09)
+S3 groups flight vs esql: 100 groups identical (counts exact, averages within 1e-09)
+ok   terms exactness: doc_count_error_upper_bound=0, sum_other_doc_count=0 (size=65536, 100 buckets)
+
+All equivalence checks passed: every stack returns the same data.
+gate verdict PASS; 0 non-blocking skip(s)
+
+=== 08:01:00 === warming the page cache before the first timed block
+/Users/smanciot/git/softnetwork-app/softclient4es-benchmarks/extraction-vs-trino/.venv/lib/python3.12/site-packages/adbc_driver_manager/dbapi.py:369: Warning: Cannot disable autocommit; conn will not be DB-API 2.0 compliant
+  warnings.warn(
+warm pass rows: 10000000
+/Users/smanciot/git/softnetwork-app/softclient4es-benchmarks/extraction-vs-trino/.venv/lib/python3.12/site-packages/adbc_driver_manager/dbapi.py:369: Warning: Cannot disable autocommit; conn will not be DB-API 2.0 compliant
+  warnings.warn(
+warm pass rows: 10000000
+
+=== 08:02:25 === page cache warmed
+
+=== 08:02:25 === .venv/bin/python runners/orchestrate.py --session results/20260821T041841-v030-prewarm-1shard --stop-idle-engine --index bench_events_10m_s1 --variant 1shard --stacks flight trino --scenarios S1 S3
+session: results/20260821T041841-v030-prewarm-1shard
+[flight S1] warmup 1/2
+[flight S1] warmup 2/2
+[flight S1] run 1/5
+[flight S1] run 2/5
+[flight S1] run 3/5
+[flight S1] run 4/5
+[flight S1] run 5/5
+Trino cluster ready: 3 active nodes (2 workers: 6ef3f8ddf30a, f3f2a59b9ea5)
+[trino S1] warmup 1/2
+Traceback (most recent call last):
+  File "/Users/smanciot/git/softnetwork-app/softclient4es-benchmarks/extraction-vs-trino/runners/run_trino.py", line 314, in <module>
+    result = run(a.scenario, a.index, a.encoding, a.request_timeout, a.dtype_backend,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/smanciot/git/softnetwork-app/softclient4es-benchmarks/extraction-vs-trino/runners/run_trino.py", line 235, in run
+    rows = cur.fetchall()                  # materialized client-side table
+           ^^^^^^^^^^^^^^
+  File "/Users/smanciot/git/softnetwork-app/softclient4es-benchmarks/extraction-vs-trino/.venv/lib/python3.12/site-packages/trino/dbapi.py", line 742, in fetchall
+    return list(iter(self.fetchone, None))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/smanciot/git/softnetwork-app/softclient4es-benchmarks/extraction-vs-trino/.venv/lib/python3.12/site-packages/trino/dbapi.py", line 684, in fetchone
+    return next(self._iterator)
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/smanciot/git/softnetwork-app/softclient4es-benchmarks/extraction-vs-trino/.venv/lib/python3.12/site-packages/trino/client.py", line 850, in __iter__
+    next_rows = self._query.fetch() if not self._query.finished else None
+                ^^^^^^^^^^^^^^^^^^^
+  File "/Users/smanciot/git/softnetwork-app/softclient4es-benchmarks/extraction-vs-trino/.venv/lib/python3.12/site-packages/trino/client.py", line 1006, in fetch
+    status = self._request.process(response)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/smanciot/git/softnetwork-app/softclient4es-benchmarks/extraction-vs-trino/.venv/lib/python3.12/site-packages/trino/client.py", line 744, in process
+    raise self._process_error(response["error"], response.get("id"))
+trino.exceptions.TrinoUserError: TrinoUserError(type=USER_ERROR, name=ABANDONED_QUERY, message="Query 20260821_070414_00001_nvk2t was abandoned by the client, as it may have exited or stopped checking for query results. Query results have not been accessed since 2026-08-21T07:04:23.823465012Z: currentTime 2026-08-21T07:20:13.239009708Z", query_id=20260821_070414_00001_nvk2t)
+[trino S1] failed (exit 1), retrying once
+Traceback (most recent call last):
+  File "/Users/smanciot/git/softnetwork-app/softclient4es-benchmarks/extraction-vs-trino/runners/run_trino.py", line 314, in <module>
+    result = run(a.scenario, a.index, a.encoding, a.request_timeout, a.dtype_backend,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/smanciot/git/softnetwork-app/softclient4es-benchmarks/extraction-vs-trino/runners/run_trino.py", line 235, in run
+    rows = cur.fetchall()                  # materialized client-side table
+           ^^^^^^^^^^^^^^
+  File "/Users/smanciot/git/softnetwork-app/softclient4es-benchmarks/extraction-vs-trino/.venv/lib/python3.12/site-packages/trino/dbapi.py", line 742, in fetchall
+    return list(iter(self.fetchone, None))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/smanciot/git/softnetwork-app/softclient4es-benchmarks/extraction-vs-trino/.venv/lib/python3.12/site-packages/trino/dbapi.py", line 684, in fetchone
+    return next(self._iterator)
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/smanciot/git/softnetwork-app/softclient4es-benchmarks/extraction-vs-trino/.venv/lib/python3.12/site-packages/trino/client.py", line 850, in __iter__
+    next_rows = self._query.fetch() if not self._query.finished else None
+                ^^^^^^^^^^^^^^^^^^^
+  File "/Users/smanciot/git/softnetwork-app/softclient4es-benchmarks/extraction-vs-trino/.venv/lib/python3.12/site-packages/trino/client.py", line 1006, in fetch
+    status = self._request.process(response)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/smanciot/git/softnetwork-app/softclient4es-benchmarks/extraction-vs-trino/.venv/lib/python3.12/site-packages/trino/client.py", line 744, in process
+    raise self._process_error(response["error"], response.get("id"))
+trino.exceptions.TrinoQueryError: TrinoQueryError(type=INTERNAL_ERROR, name=ABANDONED_TASK, message="Task 20260821_070425_00002_nvk2t.0.0.0 has not been accessed since 2026-08-21T07:21:13.145797889Z: currentTime 2026-08-21T07:31:56.653389250Z", query_id=20260821_070425_00002_nvk2t)
+trino/S1: failed twice -- aborting.
+
+=== 09:31:57 === FAILED: .venv/bin/python runners/orchestrate.py --session results/20260821T041841-v030-prewarm-1shard --stop-idle-engine --index bench_events_10m_s1 --variant 1shard --stacks flight trino --scenarios S1 S3
+
+=== 09:31:57 === continuing
+
+=== 09:31:57 === .venv/bin/python runners/probe_trino_splits.py --index bench_events_10m_s1 --out results/20260821T041841-v030-prewarm-1shard/trino-splits-probe.json
+{"stack": "trino", "scenario": "splits-probe", "ts": "2026-08-21T07:31:57Z", "index": "bench_events_10m_s1", "query": "SELECT id, event_ts, amount, qty, status, country, category, name FROM bench_events_10m_s1", "query_id": "20260821_070524_00003_nvk2t", "nodes": [{"node_id": "807d6d725410", "coordinator": true, "state": "active"}, {"node_id": "f3f2a59b9ea5", "coordinator": false, "state": "active"}, {"node_id": "6ef3f8ddf30a", "coordinator": false, "state": "active"}], "splits_by_node_stage": [{"node_id": "6ef3f8ddf30a", "stage_id": 0, "splits": 1}], "scan_stage_id": 0, "scan_splits_total": 1, "scan_splits_by_node": {"6ef3f8ddf30a": 1}, "nodes_with_scan_splits": 1}
+
+=== 09:32:56 === restoring the 6-shard topology
+
+=== 09:32:56 === .venv/bin/python generator/select_topology.py --index bench_events_10m
+opened  bench_events_10m
+closed  bench_events_10m_s1
+
+resident topology -> bench_events_10m (6 shard(s))
+
+  OPEN    bench_events_10m               6 shard(s)      10000000 docs
+  closed  bench_events_10m_s1                     -             - docs
+
+=== 09:32:56 === wrote results/20260821T041841-v030-prewarm-1shard/summary.md
+
+=== 09:32:56 === DONE  phase 3 (results/20260821T041841-v030-prewarm-1shard)

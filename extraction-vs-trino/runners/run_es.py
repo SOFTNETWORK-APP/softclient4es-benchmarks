@@ -11,8 +11,18 @@ assertion. With it, it is a number -- and every S1 comparison can be stated as
 "the ES leg costs X; SoftClient4ES adds Y on top of it, Trino adds Z", which is
 both more honest and a stronger claim than the bare ratio.
 
-Deliberately does NOT build client-side objects beyond parsing: this is the floor,
+By default it does NOT build client-side objects beyond parsing: that is the floor,
 not a third contender.
+
+  --build arrow   builds the real artifact instead -- one Arrow table, 10M x 8,
+                  assembled per page and concatenated once, the same deliverable
+                  S1 produces. Added 2026-08-19 after a reviewer pointed out that
+                  the sliced floor beats us on S1's own metric (22.5 s against
+                  34.0 s) while being credited with a cost it does not pay: a
+                  count-and-discard scroll produces nothing you can compute on, so
+                  comparing its CPU against ours compares a cheaper task, not a
+                  cheaper implementation. This variant removes that asymmetry and
+                  is published whatever it says.
 
 TWO FLOORS, since 2026-08-16:
 
@@ -41,19 +51,45 @@ import argparse
 import json
 import multiprocessing
 import resource
+import sys
 import time
 import urllib.request
 
-from scenarios import (COLUMNS, DEFAULT_INDEX, HOST, check, emit, guard_environment,
+from scenarios import (COLUMNS, es_wire_bytes, es_wire_delta, DEFAULT_INDEX, HOST, check, emit, guard_environment,
                        host_load, memory_pressure, net_bytes, net_delta,
-                       peak_footprint_mb, peak_rss_mb)
+                       peak_footprint_mb, peak_rss_mb, server_cpu_delta,
+                       server_cpu_sample)
 
 ES = f"http://{HOST}:9200"
 PAGE = 1000            # == ARROW_BATCH_SIZE == elasticsearch.scroll-size
 SCROLL_TTL = "5m"
-# One slice per shard of the 5-shard topology. Elasticsearch's own guidance is to
-# keep max <= the shard count; above it, slices share shards and contend.
-SLICES = 5
+# One slice per PRIMARY SHARD -- resolved from the index at run time, never hardcoded.
+#
+# It was `SLICES = 5`, a literal left over from the era when the main index had 5
+# shards. The topology was later inverted (main is 6 shards, the 1-shard index is the
+# sensitivity arm) and this constant did not follow, so the floor ran 5 slices over 6
+# shards: Elasticsearch hands one slice TWO shards, that slice does double the work,
+# and since the wall clock is the slowest slice the floor came in ~2/6 of the corpus
+# behind instead of ~1/6.
+#
+# That understates the competitor, and it understates it in OUR favour -- the floor is
+# the number our own extraction is compared against. Deriving it removes the whole
+# class of error: a floor measured at the wrong parallelism is not a floor.
+SLICES = None          # None => one per primary shard, see resolve_slices()
+
+
+def resolve_slices(index, requested=None):
+    """Slice count for the floor: what a competent engineer would actually use."""
+    if requested:
+        return requested
+    try:
+        with urllib.request.urlopen(f"{ES}/{index}/_settings", timeout=10) as r:
+            s = json.load(r)[index]["settings"]["index"]
+        return int(s["number_of_shards"])
+    except Exception as e:
+        sys.exit(f"could not resolve the primary shard count for {index} "
+                 f"({type(e).__name__}: {e}). Refusing to guess: a floor measured at "
+                 f"the wrong slice count silently flatters whatever it is compared to.")
 
 
 def _post(path, body):
@@ -75,16 +111,41 @@ def _delete_scroll(scroll_id):
         pass           # a leaked scroll context expires on its own; never fail a run for it
 
 
-def _scroll(index, slice_spec=None):
-    """Scroll one (optionally sliced) view of the index; return the row count."""
+def _batches(hits, pa):
+    """One Arrow RecordBatch per ES page, built column-wise from the parsed JSON.
+
+    Per PAGE, not per run: holding 10M rows as Python objects before converting
+    would measure Python's object overhead rather than the approach's real cost,
+    and no competent implementation would do it. This is the charitable version.
+    """
+    cols = {c: [] for c in COLUMNS}
+    for h in hits:
+        src = h["_source"]
+        for c in COLUMNS:
+            cols[c].append(src.get(c))
+    return pa.RecordBatch.from_pydict(cols)
+
+
+def _scroll(index, slice_spec=None, build=None):
+    """Scroll one (optionally sliced) view of the index.
+
+    Returns the row count, or (row count, Arrow IPC bytes) when `build == "arrow"`.
+    """
     body = {"size": PAGE, "_source": COLUMNS,
             "query": {"match_all": {}},
             "sort": ["_doc"]}
     if slice_spec is not None:
         body["slice"] = slice_spec
+    pa = batches = None
+    if build == "arrow":
+        import pyarrow as pa                            # noqa: F811  (local by design)
+        batches = []
     page = _post(f"/{index}/_search?scroll={SCROLL_TTL}", body)
     scroll_id = page.get("_scroll_id")
-    rows = len(page["hits"]["hits"])
+    hits = page["hits"]["hits"]
+    rows = len(hits)
+    if batches is not None and hits:
+        batches.append(_batches(hits, pa))
     try:
         while True:
             page = _post("/_search/scroll",
@@ -94,10 +155,21 @@ def _scroll(index, slice_spec=None):
             if not hits:
                 break
             rows += len(hits)
+            if batches is not None:
+                batches.append(_batches(hits, pa))
     finally:
         if scroll_id:
             _delete_scroll(scroll_id)
-    return rows
+    if batches is None:
+        return rows
+    # Hand the slice back as Arrow IPC bytes. A multi-PROCESS pipeline has to
+    # serialize somewhere, and IPC is the cheapest honest way; the cost is inside
+    # the measured CPU, because it is a real cost of the approach.
+    tbl = pa.Table.from_batches(batches)
+    sink = pa.BufferOutputStream()
+    with pa.ipc.new_stream(sink, tbl.schema) as w:
+        w.write_table(tbl)
+    return rows, sink.getvalue().to_pybytes()
 
 
 def _slice_worker(args):
@@ -111,18 +183,42 @@ def _slice_worker(args):
     Returns its own CPU and footprint so the parent can report the client's TOTAL
     cost rather than one process's share.
     """
-    index, slice_id, slice_max = args
+    index, slice_id, slice_max, build = args
+    if build == "arrow":
+        import pyarrow                                   # noqa: F401  before the clock
     c0 = time.process_time()
-    rows = _scroll(index, {"id": slice_id, "max": slice_max})
-    return {"slice": slice_id, "rows": rows,
+    try:
+        got = _scroll(index, {"id": slice_id, "max": slice_max}, build)
+    except Exception as exc:
+        # ⚠️ RE-RAISE AS A PLAIN STRING. multiprocessing pickles a worker's
+        # exception back to the parent, and urllib's HTTPError holds an open
+        # BufferedReader -- which is NOT picklable, so the real failure was
+        # replaced by "TypeError: cannot pickle 'BufferedReader' instances" and
+        # the cause vanished. It cost a 5-shard block on 2026-08-19: the index
+        # was CLOSED (phase 3 closes it to spare the 2 GB heap) and the only
+        # visible error named a pickling problem. Carry the body too -- an
+        # Elasticsearch refusal explains itself there and nowhere else.
+        body = ""
+        try:
+            body = exc.read().decode()[:400]             # HTTPError is also a file
+        except Exception:
+            pass
+        raise RuntimeError(
+            f"slice {slice_id}/{slice_max} on {index} failed: "
+            f"{type(exc).__name__}: {exc}{(' -- ' + body) if body else ''}") from None
+    rows, ipc = got if isinstance(got, tuple) else (got, None)
+    return {"slice": slice_id, "rows": rows, "ipc": ipc,
             "cpu_s": time.process_time() - c0,
             "peak_footprint_mb": peak_footprint_mb()}
 
 
-def run(index):
+def run(index, build=None):
+    if build == "arrow":
+        import pyarrow                                   # noqa: F401  before the clock
     t0, c0 = time.perf_counter(), time.process_time()
-    rows = _scroll(index)
-    return {"rows": rows,
+    got = _scroll(index, None, build)
+    rows = got[0] if isinstance(got, tuple) else got
+    return {"rows": rows, "build": build or "count",
             "query_wall_s": time.perf_counter() - t0,
             "wall_s": time.perf_counter() - t0,
             "cpu_s": time.process_time() - c0,
@@ -133,10 +229,27 @@ def run(index):
             "mem_pressure": memory_pressure()}
 
 
-def run_sliced(index, slices=SLICES):
+def run_sliced(index, slices=None, build=None):
+    slices = resolve_slices(index, slices)
+    if build == "arrow":
+        import pyarrow as pa
     t0, c0 = time.perf_counter(), time.process_time()
     with multiprocessing.Pool(slices) as pool:
-        parts = pool.map(_slice_worker, [(index, i, slices) for i in range(slices)])
+        parts = pool.map(_slice_worker,
+                         [(index, i, slices, build) for i in range(slices)])
+    if build == "arrow":
+        # ONE table, like every stack this floor is a floor for. Leaving five
+        # per-slice tables would be a cheaper artifact than S1's and not the same
+        # deliverable, so the concatenation is measured, not skipped.
+        tbl = pa.concat_tables([pa.ipc.open_stream(p["ipc"]).read_all()
+                                for p in parts])
+        assert tbl.num_rows == sum(p["rows"] for p in parts), tbl.num_rows
+        assert tbl.column_names == list(COLUMNS), tbl.column_names
+        for p in parts:
+            p.pop("ipc", None)                            # never serialize into the JSON
+    else:
+        for p in parts:
+            p.pop("ipc", None)
     wall = time.perf_counter() - t0
     kids = resource.getrusage(resource.RUSAGE_CHILDREN)
     # Client CPU is the SUM across the client's processes: the parent, plus the
@@ -144,6 +257,7 @@ def run_sliced(index, slices=SLICES):
     # kept alongside it so the split is visible, but the headline is the total --
     # parallelism buys wall clock by spending more CPU, and both belong in the row.
     return {"rows": sum(p["rows"] for p in parts),
+            "build": build or "count",
             "query_wall_s": wall,
             "wall_s": wall,
             "cpu_s": (time.process_time() - c0) + kids.ru_utime + kids.ru_stime,
@@ -164,8 +278,12 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--scenario", default="S0", choices=["S0", "S0p"])
     p.add_argument("--index", default=DEFAULT_INDEX)
-    p.add_argument("--slices", type=int, default=SLICES,
-                   help="S0p only: number of Elasticsearch slices, one process each")
+    p.add_argument("--slices", type=int, default=None,
+                   help="S0p only: Elasticsearch slices, one process each "
+                        "(default: one per primary shard of the index under test)")
+    p.add_argument("--build", default=None, choices=["arrow"],
+                   help="build a real client artifact (one Arrow table) instead of "
+                        "counting rows and discarding them")
     p.add_argument("--variant", default="")
     p.add_argument("--out")
     a = p.parse_args()
@@ -175,10 +293,15 @@ if __name__ == "__main__":
     # re-run on 2026-08-17 over an arm whose client holds 83 MB.
     guard_environment(a.scenario)
 
-    before = net_bytes("elasticsearch")
+    before = es_wire_bytes()
+    # The floors run no engine, so "server" is Elasticsearch alone -- which is the
+    # point: it is what makes S0p's total cost comparable to a stack's.
+    cpu_before = server_cpu_sample([])
     load_before = host_load()
-    out = run(a.index) if a.scenario == "S0" else run_sliced(a.index, a.slices)
-    out["net"] = net_delta(before, net_bytes("elasticsearch"))
+    out = (run(a.index, a.build) if a.scenario == "S0"
+           else run_sliced(a.index, a.slices, a.build))
+    out["net"] = es_wire_delta(before, es_wire_bytes())
+    out["server_cpu"] = server_cpu_delta(cpu_before, server_cpu_sample([]))
     out["host_load_before"], out["host_load_after"] = load_before, host_load()
     check(a.scenario, out)
     emit({"stack": "es-raw", "scenario": a.scenario, "index": a.index,

@@ -20,6 +20,7 @@ A run that "passed" while the allocator latched a fatal error is not a pass.
 """
 import argparse
 import json
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -29,6 +30,7 @@ from scenarios import (HOST, emit, guard_environment, memory_pressure, net_bytes
 
 FLIGHT_URL = "grpc://127.0.0.1:32010"          # IP literal, never a hostname (arrow#151)
 HEALTH_URL = "http://127.0.0.1:32011/health"
+ES_URL = f"http://{HOST}:9200"
 
 SMALL_LEG = "bench_1m"
 LARGE_LEG = "bench_events_10m"
@@ -57,11 +59,78 @@ LARGE_LEG = "bench_events_10m"
 # Re-derive these if the corpus is ever regenerated; they are data-specific, and a
 # stale oracle turns the correctness gate into a rubber stamp.
 JOIN_SCENARIOS = {
-    "J0": {"where": None,                  "group_by": None,       "rows": 1_000_000},
-    "J1": {"where": "b.status = 'paid'",   "group_by": None,       "rows":   125_361},
-    "J2": {"where": None,                  "group_by": "b.category", "rows":       100},
+    "J0": {"where": None,                  "group_by": None},
+    "J1": {"where": "b.status = 'paid'",   "group_by": None},
+    "J2": {"where": None,                  "group_by": "b.category"},
 }
-EXPECTED_JOIN_ROWS = JOIN_SCENARIOS["J0"]["rows"]
+
+
+def derive_oracles(small=None, large=None):
+    """Read the three expected row counts from Elasticsearch, for THIS corpus.
+
+    They used to be literals (1_000_000 / 125_361 / 100) derived by hand against a
+    corpus whose small leg spanned ids 8,810,000..9,809,999. On 2026-08-20 bench_1m
+    was regenerated at offset 0 instead, and J1 failed on BOTH engines with the same
+    count -- 125,044 against the literal's 125,361. Two engines agreeing exactly is
+    the signature of a wrong oracle, not a wrong engine: the join was still a valid
+    1:1 value-identical slice, only its selectivity had moved.
+
+    The file already said "re-derive these if the corpus is ever regenerated; a stale
+    oracle turns the correctness gate into a rubber stamp". Deriving them here is that
+    instruction made automatic, and it keeps the property that matters -- the oracle
+    comes from ELASTICSEARCH, never from either engine, so neither can certify itself.
+
+    The id window is read from the small leg rather than assumed, because that is
+    precisely the assumption that broke.
+    """
+    small, large = small or SMALL_LEG, large or LARGE_LEG
+
+    def es(path, body):
+        req = urllib.request.Request(
+            f"{ES_URL}/{path}", data=json.dumps(body).encode(), method="POST",
+            headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return json.loads(r.read().decode())
+
+    try:
+        agg = es(f"{small}/_search",
+                 {"size": 0, "aggs": {"lo": {"min": {"field": "id"}},
+                                      "hi": {"max": {"field": "id"}}}})["aggregations"]
+        lo, hi = int(agg["lo"]["value"]), int(agg["hi"]["value"])
+        rng = {"range": {"id": {"gte": lo, "lte": hi}}}
+
+        j0 = es(f"{large}/_count", {"query": rng})["count"]
+        j1 = es(f"{large}/_count",
+                {"query": {"bool": {"filter": [rng, {"term": {"status": "paid"}}]}}})["count"]
+        j2 = es(f"{large}/_search",
+                {"size": 0, "query": rng,
+                 "aggs": {"c": {"cardinality": {"field": "category",
+                                                "precision_threshold": 40000}}}}
+                )["aggregations"]["c"]["value"]
+    except Exception as e:
+        sys.exit(f"could not derive the JOIN oracles from Elasticsearch "
+                 f"({type(e).__name__}: {e}). Refusing to measure: without an oracle "
+                 f"the correctness gate is a rubber stamp.")
+
+    small_n = es(f"{small}/_count", {"query": {"match_all": {}}})["count"]
+    if j0 != small_n:
+        sys.exit(f"the join is not 1:1: {small} holds {small_n:,} docs but {large} has "
+                 f"{j0:,} in its id window {lo:,}..{hi:,}. Every J scenario assumes a "
+                 f"value-for-value slice; fix the corpus before measuring.")
+
+    print(f"[oracle] {small} ids {lo:,}..{hi:,}  ->  J0={j0:,}  J1={j1:,}  J2={j2:,}",
+          flush=True)
+    return {"J0": j0, "J1": j1, "J2": j2}
+
+
+ORACLES = None          # filled by derive_oracles() before any run
+
+
+def expected_rows(scenario, small=None, large=None):
+    global ORACLES
+    if ORACLES is None:
+        ORACLES = derive_oracles(small, large)
+    return ORACLES[scenario]
 
 
 def check_rows(got, expected, label):
@@ -170,7 +239,7 @@ if __name__ == "__main__":
     a = p.parse_args()
 
     expect = (a.expect_rows if a.expect_rows is not None
-              else JOIN_SCENARIOS[a.scenario]["rows"])
+              else expected_rows(a.scenario, a.small, a.large))
     sql = join_sql(a.scenario, a.small, a.large)
     service = "flight-sql" if a.engine == "flight" else "trino"
     before = net_bytes(service)

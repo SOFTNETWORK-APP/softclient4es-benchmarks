@@ -1,0 +1,555 @@
+{
+  "invocations": [
+    {
+      "warmups": 2,
+      "runs": 5,
+      "index": "bench_events_10m",
+      "variant": "",
+      "argv": [
+        "--session",
+        "results/20260820T212820-v030",
+        "--stop-idle-engine",
+        "--stacks",
+        "es-raw",
+        "--scenarios",
+        "S0",
+        "S0p"
+      ],
+      "plan": [
+        [
+          "S0",
+          "es-raw"
+        ],
+        [
+          "S0p",
+          "es-raw"
+        ]
+      ]
+    },
+    {
+      "warmups": 2,
+      "runs": 5,
+      "index": "bench_events_10m",
+      "variant": "",
+      "argv": [
+        "--session",
+        "results/20260820T212820-v030",
+        "--stop-idle-engine",
+        "--stacks",
+        "flight",
+        "trino",
+        "--scenarios",
+        "S1",
+        "S1m",
+        "S1r",
+        "S2",
+        "S3",
+        "S4"
+      ],
+      "plan": [
+        [
+          "S1",
+          "flight"
+        ],
+        [
+          "S1",
+          "trino"
+        ],
+        [
+          "S1m",
+          "flight"
+        ],
+        [
+          "S1m",
+          "trino"
+        ],
+        [
+          "S1r",
+          "flight"
+        ],
+        [
+          "S1r",
+          "trino"
+        ],
+        [
+          "S2",
+          "flight"
+        ],
+        [
+          "S2",
+          "trino"
+        ],
+        [
+          "S3",
+          "flight"
+        ],
+        [
+          "S3",
+          "trino"
+        ],
+        [
+          "S4",
+          "flight"
+        ],
+        [
+          "S4",
+          "trino"
+        ]
+      ]
+    },
+    {
+      "warmups": 2,
+      "runs": 5,
+      "index": "bench_events_10m",
+      "variant": "arrowcx",
+      "argv": [
+        "--session",
+        "results/20260820T212820-v030",
+        "--stop-idle-engine",
+        "--stacks",
+        "trino",
+        "--scenarios",
+        "S1",
+        "--route",
+        "connectorx"
+      ],
+      "plan": [
+        [
+          "S1",
+          "trino"
+        ]
+      ]
+    },
+    {
+      "warmups": 2,
+      "runs": 5,
+      "index": "bench_events_10m",
+      "variant": "arrowadbc",
+      "argv": [
+        "--session",
+        "results/20260820T212820-v030",
+        "--stop-idle-engine",
+        "--stacks",
+        "trino",
+        "--scenarios",
+        "S1",
+        "--route",
+        "adbc"
+      ],
+      "plan": [
+        [
+          "S1",
+          "trino"
+        ]
+      ]
+    },
+    {
+      "warmups": 2,
+      "runs": 5,
+      "index": "bench_events_10m",
+      "variant": "arrowdtype",
+      "argv": [
+        "--session",
+        "results/20260820T212820-v030",
+        "--stop-idle-engine",
+        "--stacks",
+        "flight",
+        "--scenarios",
+        "S1r",
+        "--dtype-backend",
+        "pyarrow"
+      ],
+      "plan": [
+        [
+          "S1r",
+          "flight"
+        ]
+      ]
+    },
+    {
+      "warmups": 2,
+      "runs": 5,
+      "index": "bench_events_10m",
+      "variant": "arrowdtype",
+      "argv": [
+        "--session",
+        "results/20260820T212820-v030",
+        "--stop-idle-engine",
+        "--stacks",
+        "trino",
+        "--scenarios",
+        "S1r",
+        "--dtype-backend",
+        "pyarrow"
+      ],
+      "plan": [
+        [
+          "S1r",
+          "trino"
+        ]
+      ]
+    },
+    {
+      "warmups": 2,
+      "runs": 5,
+      "index": "bench_events_10m",
+      "variant": "polars",
+      "argv": [
+        "--session",
+        "results/20260820T212820-v030",
+        "--stop-idle-engine",
+        "--stacks",
+        "flight",
+        "trino",
+        "--scenarios",
+        "S1r",
+        "--frame",
+        "polars"
+      ],
+      "plan": [
+        [
+          "S1r",
+          "flight"
+        ],
+        [
+          "S1r",
+          "trino"
+        ]
+      ]
+    },
+    {
+      "warmups": 2,
+      "runs": 5,
+      "index": "bench_events_10m",
+      "variant": "polarscx",
+      "argv": [
+        "--session",
+        "results/20260820T212820-v030",
+        "--stop-idle-engine",
+        "--stacks",
+        "trino",
+        "--scenarios",
+        "S1r",
+        "--frame",
+        "polars-cx"
+      ],
+      "plan": [
+        [
+          "S1r",
+          "trino"
+        ]
+      ]
+    },
+    {
+      "warmups": 2,
+      "runs": 5,
+      "index": "bench_events_10m",
+      "variant": "polarsadbc",
+      "argv": [
+        "--session",
+        "results/20260820T212820-v030",
+        "--stop-idle-engine",
+        "--stacks",
+        "trino",
+        "--scenarios",
+        "S1r",
+        "--frame",
+        "polars-adbc"
+      ],
+      "plan": [
+        [
+          "S1r",
+          "trino"
+        ]
+      ]
+    },
+    {
+      "warmups": 2,
+      "runs": 5,
+      "index": "bench_events_10m",
+      "variant": "pandascx",
+      "argv": [
+        "--session",
+        "results/20260820T212820-v030",
+        "--stop-idle-engine",
+        "--stacks",
+        "trino",
+        "--scenarios",
+        "S1r",
+        "--frame",
+        "pandas-cx"
+      ],
+      "plan": [
+        [
+          "S1r",
+          "trino"
+        ]
+      ]
+    },
+    {
+      "warmups": 2,
+      "runs": 5,
+      "index": "bench_events_10m",
+      "variant": "pandasadbc",
+      "argv": [
+        "--session",
+        "results/20260820T212820-v030",
+        "--stop-idle-engine",
+        "--stacks",
+        "trino",
+        "--scenarios",
+        "S1r",
+        "--frame",
+        "pandas-adbc"
+      ],
+      "plan": [
+        [
+          "S1r",
+          "trino"
+        ]
+      ]
+    },
+    {
+      "warmups": 2,
+      "runs": 5,
+      "index": "bench_events_10m",
+      "variant": "",
+      "argv": [
+        "--session",
+        "results/20260820T212820-v030",
+        "--stop-idle-engine",
+        "--stacks",
+        "esql",
+        "--scenarios",
+        "S1m",
+        "S3",
+        "S4"
+      ],
+      "plan": [
+        [
+          "S1m",
+          "esql"
+        ],
+        [
+          "S3",
+          "esql"
+        ],
+        [
+          "S4",
+          "esql"
+        ]
+      ]
+    },
+    {
+      "warmups": 2,
+      "runs": 5,
+      "index": "bench_events_10m",
+      "variant": "",
+      "argv": [
+        "--session",
+        "results/20260820T212820-v030",
+        "--stop-idle-engine",
+        "--stacks",
+        "esql",
+        "--scenarios",
+        "S1m",
+        "S3",
+        "S4"
+      ],
+      "plan": [
+        [
+          "S1m",
+          "esql"
+        ],
+        [
+          "S3",
+          "esql"
+        ],
+        [
+          "S4",
+          "esql"
+        ]
+      ]
+    },
+    {
+      "warmups": 2,
+      "runs": 5,
+      "index": "bench_events_10m",
+      "variant": "arrow",
+      "argv": [
+        "--session",
+        "results/20260820T212820-v030",
+        "--stop-idle-engine",
+        "--stacks",
+        "esql",
+        "--scenarios",
+        "S1m",
+        "S3",
+        "S4",
+        "--esql-route",
+        "arrow"
+      ],
+      "plan": [
+        [
+          "S1m",
+          "esql"
+        ],
+        [
+          "S3",
+          "esql"
+        ],
+        [
+          "S4",
+          "esql"
+        ]
+      ]
+    },
+    {
+      "warmups": 2,
+      "runs": 5,
+      "index": "bench_events_10m",
+      "variant": "tuned",
+      "argv": [
+        "--session",
+        "results/20260820T212820-v030",
+        "--stop-idle-engine",
+        "--stacks",
+        "trino",
+        "--scenarios",
+        "S1",
+        "--trino-catalog",
+        "elasticsearch_tuned"
+      ],
+      "plan": [
+        [
+          "S1",
+          "trino"
+        ]
+      ]
+    },
+    {
+      "warmups": 2,
+      "runs": 5,
+      "index": "bench_events_10m",
+      "variant": "dialhostname",
+      "argv": [
+        "--session",
+        "results/20260820T212820-v030",
+        "--stop-idle-engine",
+        "--stacks",
+        "flight",
+        "--scenarios",
+        "S4",
+        "--dial",
+        "hostname"
+      ],
+      "plan": [
+        [
+          "S4",
+          "flight"
+        ]
+      ]
+    },
+    {
+      "warmups": 2,
+      "runs": 5,
+      "index": "bench_events_10m",
+      "variant": "",
+      "argv": [
+        "--session",
+        "results/20260820T212820-v030",
+        "--stop-idle-engine",
+        "--scenarios",
+        "S1",
+        "--drift-scenarios",
+        "S1",
+        "--stacks",
+        "flight"
+      ],
+      "plan": [
+        [
+          "S1",
+          "flight"
+        ]
+      ]
+    },
+    {
+      "warmups": 2,
+      "runs": 5,
+      "index": "bench_events_10m",
+      "variant": "",
+      "argv": [
+        "--session",
+        "results/20260820T212820-v030",
+        "--stop-idle-engine",
+        "--stacks",
+        "es-raw",
+        "--scenarios",
+        "S0",
+        "S0p"
+      ],
+      "plan": [
+        [
+          "S0",
+          "es-raw"
+        ],
+        [
+          "S0p",
+          "es-raw"
+        ]
+      ]
+    },
+    {
+      "warmups": 2,
+      "runs": 5,
+      "index": "bench_events_10m",
+      "variant": "",
+      "argv": [
+        "--session",
+        "results/20260820T212820-v030",
+        "--stop-idle-engine",
+        "--scenarios",
+        "S1",
+        "--drift-scenarios",
+        "S1",
+        "--stacks",
+        "trino"
+      ],
+      "plan": [
+        [
+          "S1",
+          "trino"
+        ]
+      ]
+    },
+    {
+      "warmups": 2,
+      "runs": 5,
+      "index": "bench_events_10m",
+      "variant": "arrow",
+      "argv": [
+        "--session",
+        "results/20260820T212820-v030",
+        "--stop-idle-engine",
+        "--stacks",
+        "es-raw",
+        "--scenarios",
+        "S0",
+        "S0p",
+        "--build",
+        "arrow"
+      ],
+      "plan": [
+        [
+          "S0",
+          "es-raw"
+        ],
+        [
+          "S0p",
+          "es-raw"
+        ]
+      ]
+    }
+  ],
+  "measured_runs": 205
+}

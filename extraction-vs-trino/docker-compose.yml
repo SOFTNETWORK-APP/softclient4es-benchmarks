@@ -10,10 +10,32 @@
 # HOST, not in a container, and Trino's S1/S2 fetchall() needs a further
 # ~8-15 GB of host RAM -- so >= 32 GB of host memory in total.
 services:
-  elasticsearch:
+  # ── Elasticsearch: a REAL cluster, 3 nodes ──────────────────────────────────
+  # Until 2026-08-19 this was one `discovery.type=single-node` container with 4 CPU.
+  # That made section 7 prove something narrower than it claimed: five shards read by
+  # five Trino splits all landed on ONE 4-CPU Elasticsearch, so "shard parallelism does
+  # not close the gap" was really "…while Elasticsearch is the bottleneck", and the
+  # measured gains (12% / 9%) sat nowhere near the factor of five that five independent
+  # readers would suggest. A reader operating a real cluster could not recognise it.
+  #
+  # Sizing is bounded by the Docker VM (13 vCPU / 32 GB), and the binding constraint is
+  # CPU while BOTH the cluster and an engine are up:
+  #     ES 3 x 2 = 6  +  Trino 6  = 12 of 13 vCPU
+  #     ES 3 x 2 = 6  +  sidecar 4 = 10 of 13
+  # Per-node heap stays at today's 2 GB so the change is topology, not heap pressure.
+  # Total ES CPU does rise 4 -> 6; that helps BOTH engines and the raw-scroll floors
+  # equally, and no arrangement inside the old 10 vCPU could add nodes without either
+  # oversubscribing the VM or shrinking Trino's 1.5x handicap.
+  elasticsearch: &es
     image: elasticsearch:8.18.3            # same image string the arrow repo's CI uses
-    environment:
-      - discovery.type=single-node
+    environment: &es-env
+      - node.name=es-1
+      - cluster.name=docker-cluster
+      # Every node is master-eligible AND a data node: 3 nodes, quorum of 2, which is
+      # the smallest configuration that is a real cluster rather than a single node
+      # wearing three hats.
+      - discovery.seed_hosts=elasticsearch,elasticsearch-2,elasticsearch-3
+      - cluster.initial_master_nodes=es-1,es-2,es-3
       - xpack.security.enabled=false       # both stacks run auth-less: identical (zero) auth cost
       - ES_JAVA_OPTS=-Xms2g -Xmx2g
     ports: ["9200:9200"]
@@ -22,26 +44,71 @@ services:
     # the next session would regenerate it -- a slow, easy-to-miss reset in the middle of
     # a multi-hour matrix. Generation is the expensive step; keep it outside the container
     # lifecycle. Reset deliberately with `docker compose down -v`.
+    #
+    # ⚠️ ONE VOLUME PER NODE. Sharing esdata across three nodes would corrupt the data
+    # path -- each node needs its own.
     volumes:
       - esdata:/usr/share/elasticsearch/data
     mem_limit: 4g
-    cpus: 4
+    cpus: 2
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      # A node answering /_cluster/health is not a formed cluster: it answers while the
+      # others are still joining, and an index created in that window gets allocated on
+      # whatever has registered so far. Wait for 3 nodes, exactly as the Trino readiness
+      # check waits for 2 workers.
+      test: ["CMD-SHELL", "curl -sf 'http://localhost:9200/_cluster/health?wait_for_nodes=3&wait_for_status=yellow&timeout=5s' || exit 1"]
       interval: 10s
-      timeout: 5s
-      retries: 30
+      timeout: 10s
+      retries: 60
+
+  elasticsearch-2:
+    <<: *es
+    environment:
+      - node.name=es-2
+      - cluster.name=docker-cluster
+      - discovery.seed_hosts=elasticsearch,elasticsearch-2,elasticsearch-3
+      - cluster.initial_master_nodes=es-1,es-2,es-3
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms2g -Xmx2g
+    ports: []
+    volumes:
+      - esdata2:/usr/share/elasticsearch/data
+
+  elasticsearch-3:
+    <<: *es
+    environment:
+      - node.name=es-3
+      - cluster.name=docker-cluster
+      - discovery.seed_hosts=elasticsearch,elasticsearch-2,elasticsearch-3
+      - cluster.initial_master_nodes=es-1,es-2,es-3
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms2g -Xmx2g
+    ports: []
+    volumes:
+      - esdata3:/usr/share/elasticsearch/data
 
   flight-sql:
-    # The published results were measured on 0.2.5.1; override with SIDECAR_TAG in .env to
-    # measure a different image. Each session records the resolved image digest in
-    # results/<session>/sidecar-image.txt.
+    # The measured build; override with SIDECAR_TAG in .env to measure a different image.
+    # Each session records the resolved image digest in results/<session>/sidecar-image.txt.
     #
     # ⚠️ 0.2.5 vs 0.2.5.1 is NOT a cosmetic bump for this benchmark. On 0.2.5 the Flight
     # schema probe re-ran the user's whole statement whenever it already carried a LIMIT
     # (arrow#163), so every bounded extraction read its rows off Elasticsearch TWICE.
     # S1m is the cell that moves; do not blend figures across the two tags.
-    image: softnetwork/softclient4es8-arrow-flight-sql:${SIDECAR_TAG:-0.2.5.1}
+    #
+    # ⚠️ 0.2.5.1 vs 0.3.0 is a bigger break than that, in BOTH directions:
+    #   * core 0.21.0 carries #238 -- a no-ORDER-BY/no-LIMIT extraction now pages
+    #     Elasticsearch with min(primary shards, max-slices) CONCURRENT PIT slices
+    #     instead of one sequential reader. S1/S2 are the cells that move, and on a
+    #     multi-shard index they move a lot. Row ORDER of an un-ordered extraction now
+    #     interleaves across slices; nothing in this harness depends on it.
+    #   * extensions 0.3.0 carries #57 -- SOFTCLIENT4ES_LICENSE_PUBLIC_KEY is IGNORED and
+    #     licences verify against the trust root built into the artifact. A self-minted
+    #     benchmark licence therefore degrades to Community (maxQueryResults 10,000) and
+    #     every >=1M-row cell aborts on the row-count assert. The Enterprise licence must
+    #     now be issued by the licence server. See .env.example.
+    # Do not blend figures across 0.2.5.1 and 0.3.0.
+    image: softnetwork/softclient4es8-arrow-flight-sql:${SIDECAR_TAG:-0.3.0}
     depends_on:
       elasticsearch:
         condition: service_healthy
@@ -152,6 +219,39 @@ services:
       # this is what makes the symmetric comparison possible at all.
       - ARROW_BATCH_SIZE=${ARROW_BATCH_SIZE:-1000}
       #
+      # --- Elasticsearch paging (core #238, new in 0.21.0) ---------------------------
+      # TWO DIFFERENT page sizes exist and they are not interchangeable. ARROW_BATCH_SIZE
+      # above is how many rows the sidecar puts in one Arrow batch on the wire TO THE
+      # CLIENT. ELASTIC_SCROLL_SIZE is how many documents one page reads FROM
+      # ELASTICSEARCH -- that is the one whose peer is Trino's elasticsearch.scroll-size,
+      # and the fairness rule in METHODOLOGY section 2 is about THIS value. Both default
+      # to 1000, which is also Trino's default, so the default arm stays symmetric.
+      - ELASTIC_SCROLL_SIZE=${ELASTIC_SCROLL_SIZE:-1000}
+      #
+      # Concurrent PIT slices for a no-ORDER-BY/no-LIMIT extraction (ES 7.15+). The
+      # EFFECTIVE count is min(primary shards, max-slices), so on the 6-shard main index
+      # the shipped default 8 resolves to 6 -- verified in the sidecar log:
+      #   "Sliced PIT paging: 6 slices over 6 primary shards (max-slices 8, page 1000)"
+      #
+      # Left at the shipped default deliberately: the headline arm must be the software
+      # as a user receives it, not a tuned configuration. Setting 1 restores the
+      # sequential reader that every session up to and including 0.2.5.1 measured, which
+      # is what makes an honest A/B of #238 possible on identical hardware:
+      #
+      #   ELASTIC_SCROLL_MAX_SLICES=1 docker compose up -d --force-recreate flight-sql
+      #
+      # ⚠️ Verify the value took effect rather than trusting it -- the same lesson as
+      # SOFTCLIENT4ES_LOG_LEVEL above, which was inert for a whole session. Grep the
+      # SLICE COUNT the extraction reports, NOT the decision message: at max-slices = 1
+      # the sidecar skips the shard-count lookup and logs no decision at all, so a grep
+      # for "Sliced PIT paging|paging sequentially" comes back empty on a perfectly
+      # well-configured sequential run.
+      #   docker logs <sidecar> | grep -E "slice\(s\)|Sliced PIT paging"
+      #   -> "PIT search_after completed (6 slice(s))"  sliced
+      #   -> "PIT search_after completed (1 slice(s))"  sequential
+      # Needs SOFTCLIENT4ES_LOG_LEVEL=INFO; both lines are INFO.
+      - ELASTIC_SCROLL_MAX_SLICES=${ELASTIC_SCROLL_MAX_SLICES:-8}
+      #
       # NO licence env is wired here on purpose: as committed, this service runs on
       # Community (10k maxQueryResults), which rehearses every scenario end to end at
       # --limit scale. Full 10M S1/S2 runs need an Enterprise licence, injected LOCALLY
@@ -254,4 +354,8 @@ services:
 # Persists the generated corpus across container recreation. Deliberate reset:
 #   docker compose down -v
 volumes:
+  # One data path per node -- sharing a volume across three Elasticsearch nodes
+  # corrupts the data directory rather than clustering them.
   esdata:
+  esdata2:
+  esdata3:

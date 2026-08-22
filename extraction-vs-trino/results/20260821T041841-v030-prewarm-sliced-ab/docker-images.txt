@@ -1,0 +1,8 @@
+CONTAINER                               REPOSITORY                                    TAG                 PLATFORM            IMAGE ID            SIZE                CREATED
+extraction-vs-trino-elasticsearch-1     elasticsearch                                 8.18.3              linux/arm64/v8      6c1e9224847a        531MB               14 months ago
+extraction-vs-trino-elasticsearch-2-1   elasticsearch                                 8.18.3              linux/arm64/v8      6c1e9224847a        531MB               14 months ago
+extraction-vs-trino-elasticsearch-3-1   elasticsearch                                 8.18.3              linux/arm64/v8      6c1e9224847a        531MB               14 months ago
+extraction-vs-trino-flight-sql-1        softnetwork/softclient4es8-arrow-flight-sql   0.3.0               linux/arm64         9dd80b77f62e        956MB               18 hours ago
+extraction-vs-trino-trino-1             trinodb/trino                                 483                 linux/arm64         db58cc93e593        1.03GB              4 weeks ago
+extraction-vs-trino-trino-worker-1-1    trinodb/trino                                 483                 linux/arm64         db58cc93e593        1.03GB              4 weeks ago
+extraction-vs-trino-trino-worker-2-1    trinodb/trino                                 483                 linux/arm64         db58cc93e593        1.03GB              4 weeks ago

@@ -31,6 +31,37 @@ const BODY = process.env.REPORT_HTML
 const OUTPUT = path.resolve(process.argv[2] ??
   path.join(HERE, 'SoftClient4ES-vs-Trino-Extraction-Benchmark.pdf'));
 
+// ── Refuse to build an unverified report ──────────────────────────────────────
+// The PDF is the artifact most likely to be forwarded on its own, and the one where a
+// wrong figure is hardest to notice afterwards. It has already gone wrong once: a
+// running footer credited all 21 pages to a build whose defect had forced the
+// re-measurement. On 2026-08-21 the reverse became possible — report.html carried the
+// NEW version strings while its tables still held the PREVIOUS session's numbers, which
+// would have produced a PDF that was mislabelled in the other direction.
+//
+// verify_claims.py re-derives every published figure from the run records, diffs the
+// report against RESULTS cell by cell, and checks the tag and digest against the
+// session's own record. If it fails, there is nothing here worth rendering.
+//
+//   SKIP_VERIFY=1 node build.mjs      # drafts only; never for anything published
+if (process.env.SKIP_VERIFY !== '1') {
+  const py = ['../.venv/bin/python', 'python3.12', 'python3']
+    .map(c => (c.startsWith('.') ? path.join(HERE, c) : c))
+    .find(c => c.startsWith('/') ? existsSync(c) : true);
+  const r = spawnSync(py, [path.join(HERE, '..', 'runners', 'verify_claims.py')],
+                      { cwd: path.join(HERE, '..'), encoding: 'utf8' });
+  if (r.status !== 0) {
+    process.stderr.write(r.stdout ?? '');
+    process.stderr.write(r.stderr ?? '');
+    console.error('\nREFUSING TO BUILD: verify_claims.py did not pass.\n' +
+      'The report disagrees with RESULTS, with the run records, or with the image the\n' +
+      'session actually ran. Fix the report rather than the check; re-run with\n' +
+      'SKIP_VERIFY=1 only for a throwaway draft.');
+    process.exit(1);
+  }
+  console.log('verify_claims.py passed — report figures and provenance check out.');
+}
+
 const CHROME_CANDIDATES = [
   '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
   '/Applications/Chromium.app/Contents/MacOS/Chromium',
@@ -62,7 +93,7 @@ const footerTemplate = `
   <div style="display:flex;justify-content:space-between;align-items:center;
               border-top:0.5px solid #e2e8f0;padding-top:4px;">
     <span>softclient4es.dev &nbsp;·&nbsp; Benchmark report &nbsp;·&nbsp; August 2026
-          &nbsp;·&nbsp; measured on the released 0.2.5.1 build</span>
+          &nbsp;·&nbsp; measured on the released 0.3.0 build</span>
     <span><span class="pageNumber"></span> / <span class="totalPages"></span></span>
   </div>
 </div>`;
@@ -230,7 +261,7 @@ w.add_metadata({
     '/Title': 'SoftClient4ES vs Trino — Elasticsearch extraction benchmark',
     '/Author': 'SOFTNETWORK',
     '/Subject': 'Extracting 10M rows out of Elasticsearch: Arrow Flight SQL vs the Trino '
-                'Elasticsearch connector, measured on the released 0.2.5.1 build',
+                'Elasticsearch connector, measured on the released 0.3.0 build',
     '/Keywords': 'Elasticsearch, Arrow Flight SQL, Trino, benchmark, SoftClient4ES',
     '/Creator': 'softclient4es.dev',
 })

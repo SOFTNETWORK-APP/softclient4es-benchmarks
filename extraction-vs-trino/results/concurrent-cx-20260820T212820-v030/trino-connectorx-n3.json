@@ -1,0 +1,38 @@
+{
+  "engine": "trino",
+  "route": "connectorx",
+  "n": 3,
+  "cap_mb": 2730,
+  "budget_gib": 8.0,
+  "completed": 0,
+  "total_wall_s": 48.56994066698826,
+  "runs": [
+    {
+      "idx": 0,
+      "route": "connectorx",
+      "outcome": "OOM-KILLED",
+      "exit_code": 137,
+      "wall_s": 48.56952512499993,
+      "peak_rss_mb": null,
+      "rows": null
+    },
+    {
+      "idx": 1,
+      "route": "connectorx",
+      "outcome": "OOM-KILLED",
+      "exit_code": 137,
+      "wall_s": 48.51822050000192,
+      "peak_rss_mb": null,
+      "rows": null
+    },
+    {
+      "idx": 2,
+      "route": "connectorx",
+      "outcome": "OOM-KILLED",
+      "exit_code": 137,
+      "wall_s": 46.234998291998636,
+      "peak_rss_mb": null,
+      "rows": null
+    }
+  ]
+}

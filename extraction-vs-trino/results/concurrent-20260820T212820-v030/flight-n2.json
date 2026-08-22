@@ -1,0 +1,29 @@
+{
+  "engine": "flight",
+  "route": "stock",
+  "n": 2,
+  "cap_mb": 4096,
+  "budget_gib": 8.0,
+  "completed": 2,
+  "total_wall_s": 17.67220083400025,
+  "runs": [
+    {
+      "idx": 0,
+      "route": "stock",
+      "outcome": "completed",
+      "exit_code": 0,
+      "wall_s": 17.39880963199903,
+      "peak_rss_mb": 1537.02734375,
+      "rows": 10000000
+    },
+    {
+      "idx": 1,
+      "route": "stock",
+      "outcome": "completed",
+      "exit_code": 0,
+      "wall_s": 17.439990423999916,
+      "peak_rss_mb": 1541.31640625,
+      "rows": 10000000
+    }
+  ]
+}
