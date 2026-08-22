@@ -1,0 +1,5 @@
+index=bench_events_10m
+budget_gib=8.0
+levels=1 2 3 4 5
+engines=trino
+route=connectorx

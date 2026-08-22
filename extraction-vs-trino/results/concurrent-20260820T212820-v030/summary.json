@@ -1,0 +1,212 @@
+[
+  {
+    "engine": "flight",
+    "route": "stock",
+    "n": 1,
+    "cap_mb": 8192,
+    "budget_gib": 8.0,
+    "completed": 1,
+    "total_wall_s": 11.162161166983424,
+    "runs": [
+      {
+        "idx": 0,
+        "route": "stock",
+        "outcome": "completed",
+        "exit_code": 0,
+        "wall_s": 10.935162922000018,
+        "peak_rss_mb": 1539.21484375,
+        "rows": 10000000
+      }
+    ]
+  },
+  {
+    "engine": "flight",
+    "route": "stock",
+    "n": 2,
+    "cap_mb": 4096,
+    "budget_gib": 8.0,
+    "completed": 2,
+    "total_wall_s": 17.67220083400025,
+    "runs": [
+      {
+        "idx": 0,
+        "route": "stock",
+        "outcome": "completed",
+        "exit_code": 0,
+        "wall_s": 17.39880963199903,
+        "peak_rss_mb": 1537.02734375,
+        "rows": 10000000
+      },
+      {
+        "idx": 1,
+        "route": "stock",
+        "outcome": "completed",
+        "exit_code": 0,
+        "wall_s": 17.439990423999916,
+        "peak_rss_mb": 1541.31640625,
+        "rows": 10000000
+      }
+    ]
+  },
+  {
+    "engine": "flight",
+    "route": "stock",
+    "n": 3,
+    "cap_mb": 2730,
+    "budget_gib": 8.0,
+    "completed": 3,
+    "total_wall_s": 29.823549082997488,
+    "runs": [
+      {
+        "idx": 0,
+        "route": "stock",
+        "outcome": "completed",
+        "exit_code": 0,
+        "wall_s": 29.536554471998897,
+        "peak_rss_mb": 1543.546875,
+        "rows": 10000000
+      },
+      {
+        "idx": 1,
+        "route": "stock",
+        "outcome": "completed",
+        "exit_code": 0,
+        "wall_s": 29.43492213799982,
+        "peak_rss_mb": 1535.078125,
+        "rows": 10000000
+      },
+      {
+        "idx": 2,
+        "route": "stock",
+        "outcome": "completed",
+        "exit_code": 0,
+        "wall_s": 29.555307304999587,
+        "peak_rss_mb": 1535.44921875,
+        "rows": 10000000
+      }
+    ]
+  },
+  {
+    "engine": "flight",
+    "route": "stock",
+    "n": 4,
+    "cap_mb": 2048,
+    "budget_gib": 8.0,
+    "completed": 4,
+    "total_wall_s": 49.237308499985375,
+    "runs": [
+      {
+        "idx": 0,
+        "route": "stock",
+        "outcome": "completed",
+        "exit_code": 0,
+        "wall_s": 48.850359854999624,
+        "peak_rss_mb": 1533.36328125,
+        "rows": 10000000
+      },
+      {
+        "idx": 1,
+        "route": "stock",
+        "outcome": "completed",
+        "exit_code": 0,
+        "wall_s": 48.83301210500031,
+        "peak_rss_mb": 1529.05859375,
+        "rows": 10000000
+      },
+      {
+        "idx": 2,
+        "route": "stock",
+        "outcome": "completed",
+        "exit_code": 0,
+        "wall_s": 48.93025248000049,
+        "peak_rss_mb": 1537.25390625,
+        "rows": 10000000
+      },
+      {
+        "idx": 3,
+        "route": "stock",
+        "outcome": "completed",
+        "exit_code": 0,
+        "wall_s": 48.898379480000585,
+        "peak_rss_mb": 1543.51953125,
+        "rows": 10000000
+      }
+    ]
+  },
+  {
+    "engine": "flight",
+    "route": "stock",
+    "n": 5,
+    "cap_mb": 1638,
+    "budget_gib": 8.0,
+    "completed": 5,
+    "total_wall_s": 63.925994958000956,
+    "runs": [
+      {
+        "idx": 0,
+        "route": "stock",
+        "outcome": "completed",
+        "exit_code": 0,
+        "wall_s": 63.54669907099924,
+        "peak_rss_mb": 1543.23046875,
+        "rows": 10000000
+      },
+      {
+        "idx": 1,
+        "route": "stock",
+        "outcome": "completed",
+        "exit_code": 0,
+        "wall_s": 63.46567657000014,
+        "peak_rss_mb": 1539.05859375,
+        "rows": 10000000
+      },
+      {
+        "idx": 2,
+        "route": "stock",
+        "outcome": "completed",
+        "exit_code": 0,
+        "wall_s": 63.58024394600034,
+        "peak_rss_mb": 1537.33984375,
+        "rows": 10000000
+      },
+      {
+        "idx": 3,
+        "route": "stock",
+        "outcome": "completed",
+        "exit_code": 0,
+        "wall_s": 63.448912154000936,
+        "peak_rss_mb": 1537.28125,
+        "rows": 10000000
+      },
+      {
+        "idx": 4,
+        "route": "stock",
+        "outcome": "completed",
+        "exit_code": 0,
+        "wall_s": 63.438095695999436,
+        "peak_rss_mb": 1537.28515625,
+        "rows": 10000000
+      }
+    ]
+  },
+  {
+    "engine": "trino",
+    "route": "stock",
+    "n": 1,
+    "cap_mb": 8192,
+    "budget_gib": 8.0,
+    "completed": 0,
+    "total_wall_s": 60.10000841598958,
+    "runs": [
+      {
+        "idx": 0,
+        "route": "stock",
+        "outcome": "OOM-KILLED",
+        "exit_code": 137,
+        "wall_s": 60.099735750001855,
+        "peak_rss_mb": null,
+        "rows": null
+      }
+    ]
+  }
+]

@@ -1,0 +1,322 @@
+[
+  {
+    "engine": "flight",
+    "mode": "full",
+    "cap": "8g",
+    "verdict": "completed",
+    "exit_code": 0,
+    "payload": {
+      "engine": "flight",
+      "mode": "full",
+      "cap": "8g",
+      "outcome": "completed",
+      "rows": 10000000,
+      "wall_s": 11.228354922000108,
+      "cpu_s": 3.498668208,
+      "peak_rss_mb": 1539.0078125,
+      "rows_ok": true
+    }
+  },
+  {
+    "engine": "trino",
+    "mode": "full",
+    "cap": "8g",
+    "verdict": "OOM-KILLED",
+    "exit_code": 137,
+    "payload": null
+  },
+  {
+    "engine": "flight",
+    "mode": "full",
+    "cap": "6g",
+    "verdict": "completed",
+    "exit_code": 0,
+    "payload": {
+      "engine": "flight",
+      "mode": "full",
+      "cap": "6g",
+      "outcome": "completed",
+      "rows": 10000000,
+      "wall_s": 11.145234712999809,
+      "cpu_s": 3.6462061820000002,
+      "peak_rss_mb": 1531.2109375,
+      "rows_ok": true
+    }
+  },
+  {
+    "engine": "trino",
+    "mode": "full",
+    "cap": "6g",
+    "verdict": "OOM-KILLED",
+    "exit_code": 137,
+    "payload": null
+  },
+  {
+    "engine": "flight",
+    "mode": "full",
+    "cap": "4g",
+    "verdict": "completed",
+    "exit_code": 0,
+    "payload": {
+      "engine": "flight",
+      "mode": "full",
+      "cap": "4g",
+      "outcome": "completed",
+      "rows": 10000000,
+      "wall_s": 10.863168754000071,
+      "cpu_s": 3.470867229,
+      "peak_rss_mb": 1539.28125,
+      "rows_ok": true
+    }
+  },
+  {
+    "engine": "trino",
+    "mode": "full",
+    "cap": "4g",
+    "verdict": "OOM-KILLED",
+    "exit_code": 137,
+    "payload": null
+  },
+  {
+    "engine": "flight",
+    "mode": "full",
+    "cap": "3g",
+    "verdict": "completed",
+    "exit_code": 0,
+    "payload": {
+      "engine": "flight",
+      "mode": "full",
+      "cap": "3g",
+      "outcome": "completed",
+      "rows": 10000000,
+      "wall_s": 10.76756283800023,
+      "cpu_s": 3.362583004,
+      "peak_rss_mb": 1541.3515625,
+      "rows_ok": true
+    }
+  },
+  {
+    "engine": "trino",
+    "mode": "full",
+    "cap": "3g",
+    "verdict": "OOM-KILLED",
+    "exit_code": 137,
+    "payload": null
+  },
+  {
+    "engine": "flight",
+    "mode": "full",
+    "cap": "2g",
+    "verdict": "completed",
+    "exit_code": 0,
+    "payload": {
+      "engine": "flight",
+      "mode": "full",
+      "cap": "2g",
+      "outcome": "completed",
+      "rows": 10000000,
+      "wall_s": 11.156909588000417,
+      "cpu_s": 3.531770055,
+      "peak_rss_mb": 1537.83984375,
+      "rows_ok": true
+    }
+  },
+  {
+    "engine": "trino",
+    "mode": "full",
+    "cap": "2g",
+    "verdict": "OOM-KILLED",
+    "exit_code": 137,
+    "payload": null
+  },
+  {
+    "engine": "flight",
+    "mode": "chunked",
+    "cap": "8g",
+    "verdict": "completed",
+    "exit_code": 0,
+    "payload": {
+      "engine": "flight",
+      "mode": "chunked",
+      "cap": "8g",
+      "outcome": "completed",
+      "rows": 10000000,
+      "wall_s": 15.344123255999875,
+      "cpu_s": 11.276843808,
+      "peak_rss_mb": 154.1328125,
+      "rows_ok": true,
+      "chunksize": 100000
+    }
+  },
+  {
+    "engine": "trino",
+    "mode": "chunked",
+    "cap": "8g",
+    "verdict": "completed",
+    "exit_code": 0,
+    "payload": {
+      "engine": "trino",
+      "mode": "chunked",
+      "cap": "8g",
+      "outcome": "completed",
+      "rows": 10000000,
+      "wall_s": 59.45435573500072,
+      "cpu_s": 40.412414134,
+      "peak_rss_mb": 311.7265625,
+      "rows_ok": true,
+      "chunksize": 100000
+    }
+  },
+  {
+    "engine": "flight",
+    "mode": "chunked",
+    "cap": "6g",
+    "verdict": "completed",
+    "exit_code": 0,
+    "payload": {
+      "engine": "flight",
+      "mode": "chunked",
+      "cap": "6g",
+      "outcome": "completed",
+      "rows": 10000000,
+      "wall_s": 15.445706966000216,
+      "cpu_s": 11.326708046,
+      "peak_rss_mb": 151.640625,
+      "rows_ok": true,
+      "chunksize": 100000
+    }
+  },
+  {
+    "engine": "trino",
+    "mode": "chunked",
+    "cap": "6g",
+    "verdict": "completed",
+    "exit_code": 0,
+    "payload": {
+      "engine": "trino",
+      "mode": "chunked",
+      "cap": "6g",
+      "outcome": "completed",
+      "rows": 10000000,
+      "wall_s": 58.24552327700076,
+      "cpu_s": 39.406717061,
+      "peak_rss_mb": 312.6953125,
+      "rows_ok": true,
+      "chunksize": 100000
+    }
+  },
+  {
+    "engine": "flight",
+    "mode": "chunked",
+    "cap": "4g",
+    "verdict": "completed",
+    "exit_code": 0,
+    "payload": {
+      "engine": "flight",
+      "mode": "chunked",
+      "cap": "4g",
+      "outcome": "completed",
+      "rows": 10000000,
+      "wall_s": 10.86254087999987,
+      "cpu_s": 8.031068152,
+      "peak_rss_mb": 154.9765625,
+      "rows_ok": true,
+      "chunksize": 100000
+    }
+  },
+  {
+    "engine": "trino",
+    "mode": "chunked",
+    "cap": "4g",
+    "verdict": "completed",
+    "exit_code": 0,
+    "payload": {
+      "engine": "trino",
+      "mode": "chunked",
+      "cap": "4g",
+      "outcome": "completed",
+      "rows": 10000000,
+      "wall_s": 58.94248310999865,
+      "cpu_s": 39.591246067,
+      "peak_rss_mb": 312.3515625,
+      "rows_ok": true,
+      "chunksize": 100000
+    }
+  },
+  {
+    "engine": "flight",
+    "mode": "chunked",
+    "cap": "3g",
+    "verdict": "completed",
+    "exit_code": 0,
+    "payload": {
+      "engine": "flight",
+      "mode": "chunked",
+      "cap": "3g",
+      "outcome": "completed",
+      "rows": 10000000,
+      "wall_s": 12.702085338998586,
+      "cpu_s": 9.252760555,
+      "peak_rss_mb": 156.04296875,
+      "rows_ok": true,
+      "chunksize": 100000
+    }
+  },
+  {
+    "engine": "trino",
+    "mode": "chunked",
+    "cap": "3g",
+    "verdict": "completed",
+    "exit_code": 0,
+    "payload": {
+      "engine": "trino",
+      "mode": "chunked",
+      "cap": "3g",
+      "outcome": "completed",
+      "rows": 10000000,
+      "wall_s": 58.52982885900019,
+      "cpu_s": 39.374422752,
+      "peak_rss_mb": 314.36328125,
+      "rows_ok": true,
+      "chunksize": 100000
+    }
+  },
+  {
+    "engine": "flight",
+    "mode": "chunked",
+    "cap": "2g",
+    "verdict": "completed",
+    "exit_code": 0,
+    "payload": {
+      "engine": "flight",
+      "mode": "chunked",
+      "cap": "2g",
+      "outcome": "completed",
+      "rows": 10000000,
+      "wall_s": 11.829688462999911,
+      "cpu_s": 8.613015092,
+      "peak_rss_mb": 154.79296875,
+      "rows_ok": true,
+      "chunksize": 100000
+    }
+  },
+  {
+    "engine": "trino",
+    "mode": "chunked",
+    "cap": "2g",
+    "verdict": "completed",
+    "exit_code": 0,
+    "payload": {
+      "engine": "trino",
+      "mode": "chunked",
+      "cap": "2g",
+      "outcome": "completed",
+      "rows": 10000000,
+      "wall_s": 58.647674111000015,
+      "cpu_s": 39.689080312,
+      "peak_rss_mb": 313.58984375,
+      "rows_ok": true,
+      "chunksize": 100000
+    }
+  }
+]

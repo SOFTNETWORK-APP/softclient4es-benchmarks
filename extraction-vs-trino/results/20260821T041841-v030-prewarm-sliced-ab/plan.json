@@ -1,0 +1,81 @@
+{
+  "invocations": [
+    {
+      "warmups": 2,
+      "runs": 5,
+      "index": "bench_events_10m",
+      "variant": "sequential",
+      "argv": [
+        "--session",
+        "results/20260821T041841-v030-prewarm-sliced-ab",
+        "--stop-idle-engine",
+        "--variant",
+        "sequential",
+        "--stacks",
+        "flight",
+        "--scenarios",
+        "S1",
+        "S2",
+        "S3",
+        "S4"
+      ],
+      "plan": [
+        [
+          "S1",
+          "flight"
+        ],
+        [
+          "S2",
+          "flight"
+        ],
+        [
+          "S3",
+          "flight"
+        ],
+        [
+          "S4",
+          "flight"
+        ]
+      ]
+    },
+    {
+      "warmups": 2,
+      "runs": 5,
+      "index": "bench_events_10m",
+      "variant": "sliced",
+      "argv": [
+        "--session",
+        "results/20260821T041841-v030-prewarm-sliced-ab",
+        "--stop-idle-engine",
+        "--variant",
+        "sliced",
+        "--stacks",
+        "flight",
+        "--scenarios",
+        "S1",
+        "S2",
+        "S3",
+        "S4"
+      ],
+      "plan": [
+        [
+          "S1",
+          "flight"
+        ],
+        [
+          "S2",
+          "flight"
+        ],
+        [
+          "S3",
+          "flight"
+        ],
+        [
+          "S4",
+          "flight"
+        ]
+      ]
+    }
+  ],
+  "measured_runs": 40
+}

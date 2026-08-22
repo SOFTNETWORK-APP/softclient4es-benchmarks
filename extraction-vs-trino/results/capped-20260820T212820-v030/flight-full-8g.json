@@ -1,0 +1,18 @@
+{
+  "engine": "flight",
+  "mode": "full",
+  "cap": "8g",
+  "verdict": "completed",
+  "exit_code": 0,
+  "payload": {
+    "engine": "flight",
+    "mode": "full",
+    "cap": "8g",
+    "outcome": "completed",
+    "rows": 10000000,
+    "wall_s": 11.228354922000108,
+    "cpu_s": 3.498668208,
+    "peak_rss_mb": 1539.0078125,
+    "rows_ok": true
+  }
+}

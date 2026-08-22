@@ -1,0 +1,29 @@
+{
+ "passes": [
+  {
+   "pass": 1,
+   "rows": 10000000,
+   "wall_s": 12.39,
+   "elasticsearch_cpu_s": 45.426
+  },
+  {
+   "pass": 2,
+   "rows": 10000000,
+   "wall_s": 10.25,
+   "elasticsearch_cpu_s": 36.741
+  },
+  {
+   "pass": 3,
+   "rows": 10000000,
+   "wall_s": 10.13,
+   "elasticsearch_cpu_s": 35.913
+  },
+  {
+   "pass": 4,
+   "rows": 10000000,
+   "wall_s": 10.27,
+   "elasticsearch_cpu_s": 36.371
+  }
+ ],
+ "steady": true
+}

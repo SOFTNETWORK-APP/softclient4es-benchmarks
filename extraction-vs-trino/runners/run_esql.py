@@ -41,7 +41,8 @@ import time
 import urllib.error
 import urllib.request
 
-from scenarios import (COLUMNS, DEFAULT_INDEX, ESQL_MAX_RESULT_ROWS, ESQL_URL, HOST, S1M_ROWS,
+from scenarios import (es_wire_bytes, es_wire_delta,
+                       COLUMNS, DEFAULT_INDEX, ESQL_MAX_RESULT_ROWS, ESQL_URL, HOST, S1M_ROWS,
                        check, compose_variant, emit, esql_for, guard_environment,
                        host_load, memory_pressure, net_bytes, net_delta,
                        peak_footprint_mb, peak_rss_mb)
@@ -218,10 +219,10 @@ if __name__ == "__main__":
               **probe_join(*a.probe_join)}, a.out)
         raise SystemExit(0)
 
-    before_es = net_bytes("elasticsearch")
+    before_es = es_wire_bytes()
     load_before = host_load()
     result = run(a.scenario, a.index, a.route)
-    result["net_es"] = net_delta(before_es, net_bytes("elasticsearch"))
+    result["net_es"] = es_wire_delta(before_es, es_wire_bytes())
     result["host_load_before"], result["host_load_after"] = load_before, host_load()
     # The json route is the headline (it is what every ES|QL client speaks), so it
     # carries the base variant and sits in the cross-stack comparison; the arrow

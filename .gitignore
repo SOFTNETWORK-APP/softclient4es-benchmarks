@@ -20,3 +20,6 @@ __pycache__/
 
 # Local-only Docker override (e.g. licence injection for full-scale runs)
 extraction-vs-trino/docker-compose.override.yml
+
+# macOS
+.DS_Store

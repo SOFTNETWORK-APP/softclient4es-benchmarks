@@ -52,6 +52,7 @@ ROUTE = "default"
 ESQL_ROUTE = "json"
 DIAL = "ip"
 TRINO_CATALOG = "elasticsearch"
+BUILD = None
 
 
 def one(stack, scenario, index, variant, out=None, timeout=7200):
@@ -74,6 +75,8 @@ def one(stack, scenario, index, variant, out=None, timeout=7200):
         cmd += ["--dial", DIAL]
     if TRINO_CATALOG != "elasticsearch" and stack == "trino":
         cmd += ["--catalog", TRINO_CATALOG]
+    if BUILD and stack == "es-raw":
+        cmd += ["--build", BUILD]
     if out:
         cmd += ["--out", str(out)]
     return subprocess.run(cmd, timeout=timeout, capture_output=True, text=True)
@@ -289,6 +292,11 @@ def main():
     p.add_argument("--stacks", nargs="+", default=["es-raw", "flight", "trino"],
                    choices=list(RUNNERS))
     p.add_argument("--index", default="bench_events_10m")
+    p.add_argument("--build", default=None, choices=["arrow"],
+                   help="S0/S0p only: make the floor build a real Arrow table instead "
+                        "of counting rows and discarding them. Auto-tags the runs "
+                        "(variant 'arrow') so an artifact-building floor can never "
+                        "blend into the count-and-discard median.")
     p.add_argument("--variant", default="",
                    help="tag for a sensitivity variant, e.g. 4shard; keeps it out of "
                         "the headline medians")
@@ -334,13 +342,14 @@ def main():
                         "confounded with engine identity.")
     a = p.parse_args()
 
-    global DTYPE_BACKEND, FRAME, ROUTE, ESQL_ROUTE, DIAL, TRINO_CATALOG
+    global DTYPE_BACKEND, FRAME, ROUTE, ESQL_ROUTE, DIAL, TRINO_CATALOG, BUILD
     DTYPE_BACKEND = a.dtype_backend
     FRAME = a.frame
     ROUTE = a.route
     ESQL_ROUTE = a.esql_route
     DIAL = a.dial
     TRINO_CATALOG = a.trino_catalog
+    BUILD = a.build
     if a.frame != "default" and a.dtype_backend != "default":
         sys.exit("--dtype-backend is a pandas concept; do not combine with --frame")
     if a.frame in ("polars-cx", "polars-adbc", "pandas-cx", "pandas-adbc") and a.stacks != ["trino"]:
@@ -351,6 +360,8 @@ def main():
         a.variant = "arrowdtype"
     if a.frame != "default" and not a.variant:
         a.variant = a.frame.replace("-", "")   # polars / polarscx / polarsadbc
+    if a.build and not a.variant:
+        a.variant = a.build
     if a.route != "default" and not a.variant:
         a.variant = "arrow" + ("cx" if a.route == "connectorx" else a.route)
     # Every sensitivity flag must reach the FILENAME, not only the run JSON: the

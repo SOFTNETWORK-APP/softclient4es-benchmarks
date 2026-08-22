@@ -1,0 +1,20 @@
+{
+  "engine": "flight",
+  "route": "stock",
+  "n": 1,
+  "cap_mb": 8192,
+  "budget_gib": 8.0,
+  "completed": 1,
+  "total_wall_s": 11.215808250010014,
+  "runs": [
+    {
+      "idx": 0,
+      "route": "stock",
+      "outcome": "completed",
+      "exit_code": 0,
+      "wall_s": 10.995353213000271,
+      "peak_rss_mb": 1533.67578125,
+      "rows": 10000000
+    }
+  ]
+}

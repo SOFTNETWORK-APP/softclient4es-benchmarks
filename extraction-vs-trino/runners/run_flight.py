@@ -31,7 +31,7 @@ import adbc_driver_flightsql.dbapi as dbapi
 
 from scenarios import (DEFAULT_INDEX, ENGINE_SERVICES, EXPECTED_MIN_COLS_FLIGHT_S1,
                        EXPECTED_ROWS, HOST, SQL_AGG_DUCK, check, emit, guard_environment,
-                       compose_variant, host_load, memory_pressure, net_bytes, net_bytes_all, net_delta,
+                       compose_variant, host_load, memory_pressure, es_wire_bytes, es_wire_delta, net_bytes, net_bytes_all, net_bytes_each, net_delta, net_delta_each, server_cpu_delta, server_cpu_sample,
                        peak_footprint_mb, peak_rss_mb, sql_for)
 
 # IP literal, from scenarios.HOST -- the SAME literal every other stack now dials.
@@ -160,16 +160,21 @@ if __name__ == "__main__":
         raise SystemExit("--dtype-backend is a pandas concept; do not combine with --frame polars")
 
     before = net_bytes_all(ENGINE_SERVICES["flight"])
+    before_each = net_bytes_each(ENGINE_SERVICES["flight"])
+    cpu_before = server_cpu_sample(ENGINE_SERVICES["flight"])
     load_before = host_load()
     # Bytes that actually LEFT Elasticsearch. Summing the engine stack instead
     # double-counts internal traffic once the engine is a cluster: measured
     # 2026-08-16, engine-stack rx for S1 was 3,671 MB against ~2,950 MB truly
     # read from ES, the difference being the worker->coordinator exchange.
     # Sampled at the source, the number is independent of engine topology.
-    before_es = net_bytes("elasticsearch")
+    before_es = es_wire_bytes()
     result = run(a.scenario, a.index, a.dtype_backend, a.frame, a.dial)
     result["net"] = net_delta(before, net_bytes_all(ENGINE_SERVICES["flight"]))
-    result["net_es"] = net_delta(before_es, net_bytes("elasticsearch"))
+    result["net_per_service"] = net_delta_each(before_each, net_bytes_each(ENGINE_SERVICES["flight"]))
+    result["server_cpu"] = server_cpu_delta(
+        cpu_before, server_cpu_sample(ENGINE_SERVICES["flight"]))
+    result["net_es"] = es_wire_delta(before_es, es_wire_bytes())
     result["host_load_before"], result["host_load_after"] = load_before, host_load()
     emit({"stack": "flight", "scenario": a.scenario, "index": a.index,
           # A non-default dial must never blend into the headline medians; the tag

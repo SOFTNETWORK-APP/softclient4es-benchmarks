@@ -14,6 +14,8 @@ import re
 import resource
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 
 DEFAULT_INDEX = "bench_events_10m"
 
@@ -49,6 +51,10 @@ ENGINE_SERVICES = {
     "flight": ["flight-sql"],
     "trino": ["trino", "trino-worker-1", "trino-worker-2"],
 }
+# Elasticsearch is a 3-node cluster since 2026-08-19, so every ES-side metric has to
+# be read over three containers rather than one. Wire bytes need MORE than summing --
+# see es_wire_bytes().
+ES_SERVICES = ["elasticsearch", "elasticsearch-2", "elasticsearch-3"]
 # Workers the Trino cluster must have registered before a run may start. A healthy
 # coordinator is NOT a ready cluster: it answers /v1/info while workers are still
 # registering, and a query issued in that window silently runs on fewer nodes than
@@ -301,7 +307,7 @@ def stacks_for(scenario):
 # statement schema from row keys, not from the SQL projection), so SoftClient4ES
 # moved MORE bytes per row than the SQL asked for and this gate was a >=. That
 # metadata was removed in core#226 (_index/_score/_sort deleted, _id opt-in and
-# off by default); the released 0.2.5.1 image measured here returns 8 of 8, which
+# off by default); the released 0.3.0 image measured here returns 8 of 8, which
 # is what RESULTS S1 publishes. `extra_cols` is still recorded per run so a
 # regression shows up in the data rather than in nobody's memory.
 EXPECTED_COLS_TRINO_S1 = len(COLUMNS)
@@ -324,7 +330,7 @@ ESQL_URL = f"http://{HOST}:9200/_query"
 ESQL_MAX_RESULT_ROWS = 1_000_000
 # The S1m size. Deliberately equal to ES|QL's hard ceiling: the one scale at which
 # all three stacks can be compared like for like, and the boundary a reader wants
-# to see. Verified against the released 0.2.5.1 sidecar in every session (LIMIT 1000000
+# to see. Verified against the released 0.3.0 sidecar in every session (LIMIT 1000000
 # returns 1,000,000 rows over Flight SQL, so the explicit-LIMIT path is not the
 # bounded <=10k one). ⚠️ A predicate was considered and rejected: the generator's
 # ids are random draws, not a permutation (10,000,000 docs, 9,931,188 distinct),
@@ -682,6 +688,36 @@ def net_bytes(service):
     return None
 
 
+def net_bytes_each(services):
+    """Per-service (rx, tx), keyed by service name, or None if none readable.
+
+    net_bytes_all() sums a stack, which is right for the ES-wire axis but wrong
+    for the CLIENT leg on a multi-container engine: Trino's summed tx blends the
+    coordinator->client responses with worker->coordinator exchange, and the
+    published 0.26 GB client-leg figure for the v030 session had to be DERIVED
+    (tx_sum minus the internal share inferred from rx_sum - ES wire). Recorded
+    per container, the coordinator's own counters give it directly
+    (review 2026-08-21, point 1.3)."""
+    out = {}
+    for svc in services:
+        v = net_bytes(svc)
+        if v is not None:
+            out[svc] = v
+    return out or None
+
+
+def net_delta_each(before, after):
+    """Per-service {rx_bytes, tx_bytes} deltas for net_bytes_each() samples."""
+    if not before or not after:
+        return None
+    out = {}
+    for svc, b in before.items():
+        a_ = after.get(svc)
+        if a_ is not None:
+            out[svc] = {"rx_bytes": a_[0] - b[0], "tx_bytes": a_[1] - b[1]}
+    return out or None
+
+
 def net_bytes_all(services):
     """Summed (rx, tx) across every container of a stack, or None if unavailable.
 
@@ -702,6 +738,178 @@ def net_bytes_all(services):
             total[0] += v[0]
             total[1] += v[1]
     return (total[0], total[1]) if seen else None
+
+
+def container_cpu_stat(service):
+    """The whole cgroup v2 cpu.stat of a container as a dict, or None.
+
+    `usage_usec` is the exact CPU cost; `nr_throttled`/`throttled_usec` say
+    whether the container HIT ITS QUOTA during the window -- the counter an
+    external reviewer pointed out was in the same file the harness already
+    reads and never published (review of 2026-08-21, point 1.2). Without them,
+    a low `usage_usec` is ambiguous between "did not need more CPU" and "was
+    not allowed more CPU", and the handicap-never-consumed argument rests on
+    the difference.
+    """
+    cid = _container_id(service)
+    if not cid:
+        return None
+    try:
+        r = subprocess.run(["docker", "exec", cid, "cat", "/sys/fs/cgroup/cpu.stat"],
+                           capture_output=True, text=True, timeout=30)
+    except (subprocess.SubprocessError, OSError):
+        return None
+    out = {}
+    for line in r.stdout.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[1].lstrip("-").isdigit():
+            out[parts[0]] = int(parts[1])
+    return out or None
+
+
+def container_cpu_usec(service):
+    """Cumulative CPU microseconds a container has burned, or None."""
+    st = container_cpu_stat(service)
+    return st.get("usage_usec") if st else None
+
+
+def engine_cpu_usec(services):
+    """Summed cumulative CPU across every container of a stack, or None.
+
+    Summed for the same reason net_bytes_all() is: Trino is three containers and
+    `node-scheduler.include-coordinator=false` means the coordinator does not
+    scan, so a coordinator-only reading would miss the work.
+    """
+    total, seen = 0, False
+    for svc in services:
+        v = container_cpu_usec(svc)
+        if v is not None:
+            seen = True
+            total += v
+    return total if seen else None
+
+
+def _stack_throttle(services):
+    """Summed (nr_throttled, throttled_usec) across a stack, or None."""
+    nr, tu, seen = 0, 0, False
+    for svc in services:
+        st = container_cpu_stat(svc)
+        if st is not None:
+            seen = True
+            nr += st.get("nr_throttled", 0)
+            tu += st.get("throttled_usec", 0)
+    return (nr, tu) if seen else None
+
+
+def server_cpu_sample(engine_services):
+    """One reading of the SERVER side: the engine's containers and Elasticsearch.
+
+    Includes the cgroup throttling counters so every run can publish whether any
+    container hit its CPU limit while it ran (review 2026-08-21, point 1.2)."""
+    return {"engine_usec": engine_cpu_usec(engine_services),
+            "es_usec": engine_cpu_usec(ES_SERVICES),
+            "engine_throttle": _stack_throttle(engine_services),
+            "es_throttle": _stack_throttle(ES_SERVICES)}
+
+
+def server_cpu_delta(before, after):
+    """Server CPU seconds burned between two samples.
+
+    ⚠️ WHY THIS EXISTS. Until 2026-08-19 the benchmark measured only the CLIENT's
+    CPU, and said so in Appendix A -- while four passages described Trino as
+    "holding half again our CPU". That describes an ALLOCATION (6 vCPU against our
+    4) and was being read as a CONSUMPTION, which nothing in the harness measured.
+    An external reviewer called it the one strong rhetorical claim with no number
+    behind it, and was right. It also left the S0p floor comparison lopsided: a
+    sliced scroll pays everything in its client processes, where SoftClient4ES
+    pays a smaller client bill PLUS a sidecar JVM that went uncounted -- so "2.9x
+    less client CPU" compared a total against a part. Both are now measurable.
+    """
+    if not before or not after:
+        return None
+    out = {}
+    for key, label in (("engine_usec", "engine_cpu_s"), ("es_usec", "elasticsearch_cpu_s")):
+        b, a_ = before.get(key), after.get(key)
+        out[label] = round((a_ - b) / 1e6, 3) if b is not None and a_ is not None else None
+    if out["engine_cpu_s"] is not None and out["elasticsearch_cpu_s"] is not None:
+        out["total_cpu_s"] = round(out["engine_cpu_s"] + out["elasticsearch_cpu_s"], 3)
+    for key, label in (("engine_throttle", "engine"), ("es_throttle", "elasticsearch")):
+        b, a_ = before.get(key), after.get(key)
+        if b is not None and a_ is not None:
+            out[label + "_nr_throttled"] = a_[0] - b[0]
+            out[label + "_throttled_s"] = round((a_[1] - b[1]) / 1e6, 3)
+    return out
+
+
+def _transport_tx_bytes():
+    """Bytes the cluster has sent on its INTER-NODE transport layer (port 9300).
+
+    Read from `_nodes/stats/transport` (`tx_size_in_bytes`, cumulative per node).
+    """
+    # ⚠️ ASKED FROM INSIDE A CONTAINER, OVER LOOPBACK -- NEVER FROM THE HOST.
+    # This probe reads a counter that its own request would otherwise increment: the
+    # stats response is ~13 KB, and over the host's HTTP port it crosses eth0 and lands
+    # in the very tx counter being sampled. Measured before the fix: an IDLE cluster
+    # appeared to move ~24 KB per sample, identical at a 1.2 s and a 3.2 s window --
+    # a fixed cost, not a rate, which is the signature of self-pollution. It would have
+    # inflated the S3 push-down figure (whose true value is ~24 KB) by ~180%, i.e. the
+    # single number this benchmark's central claim rests on. Over loopback inside the
+    # container the response never touches eth0.
+    cid = _container_id(ES_SERVICES[0])
+    if not cid:
+        return None
+    try:
+        r = subprocess.run(
+            ["docker", "exec", cid, "curl", "-s",
+             "http://localhost:9200/_nodes/stats/transport"],
+            capture_output=True, text=True, timeout=30)
+        nodes = json.loads(r.stdout)["nodes"]
+    except (subprocess.SubprocessError, OSError, ValueError, KeyError):
+        return None            # cluster unreachable or answering something unexpected
+    return sum(n["transport"]["tx_size_in_bytes"] for n in nodes.values())
+
+
+def es_wire_bytes():
+    """What left the Elasticsearch CLUSTER, decomposed so it stays comparable.
+
+    ⚠️ SUMMING eth0 OVER THREE NODES IS NOT THE OLD METRIC. The headline claim of this
+    benchmark -- an aggregation that moves 24 KB where a scan moves 1.4 GB -- is bytes
+    that leave the cluster toward the client. On a single node, eth0 tx WAS that. On a
+    3-node cluster, a search is gathered by a coordinating node from the data nodes, so
+    the same payload crosses the internal transport layer before it leaves over HTTP:
+    summing eth0 across the three would count much of it twice and silently inflate
+    every wire figure, including the one the pushdown result rests on.
+
+    So both halves are recorded and the published figure is the difference:
+
+        http_tx = sum(eth0 tx over the 3 nodes) - sum(transport tx over the 3 nodes)
+
+    Both components are kept in the artifact so the correction is auditable rather than
+    asserted -- and it has an independent oracle: S3 returns 100 rows and must land at
+    ~24 KB whatever the topology, so a correction that is wrong shows up immediately in
+    a cell whose right answer is already known.
+    """
+    raw = net_bytes_all(ES_SERVICES)
+    return {"eth0": raw, "transport_tx": _transport_tx_bytes()}
+
+
+def es_wire_delta(before, after):
+    """Bytes off the cluster between two es_wire_bytes() samples, JSON-friendly."""
+    if not before or not after or not before.get("eth0") or not after.get("eth0"):
+        return None
+    rx = after["eth0"][0] - before["eth0"][0]
+    tx = after["eth0"][1] - before["eth0"][1]
+    out = {"rx_bytes": rx, "tx_bytes_eth0_sum": tx}
+    b, a_ = before.get("transport_tx"), after.get("transport_tx")
+    if b is not None and a_ is not None:
+        out["transport_tx_bytes"] = a_ - b
+        # Never negative: a clamp here would hide a broken decomposition, so it is
+        # recorded as measured and the S3 oracle is what says whether it is right.
+        out["tx_bytes"] = tx - (a_ - b)
+    else:
+        out["tx_bytes"] = tx            # single-node fallback: transport is ~0 anyway
+        out["transport_tx_bytes"] = None
+    return out
 
 
 def net_delta(before, after):
