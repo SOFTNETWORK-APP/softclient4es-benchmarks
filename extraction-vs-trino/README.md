@@ -10,6 +10,9 @@ Python data-science client.
   definitions. Read this before interpreting any number.
 - **[FINDINGS.md](FINDINGS.md)** — issues discovered while building the benchmark, and how they were
   fixed.
+- **[The report](report/SoftClient4ES-vs-Trino-Extraction-Benchmark.pdf)** (PDF) — the same figures as
+  a print-ready A4 document, with METHODOLOGY and FINDINGS as appendices. For sharing and citing;
+  it adds no measurement of its own.
 
 ## Scenarios
 

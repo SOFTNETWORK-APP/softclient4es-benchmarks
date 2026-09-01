@@ -6,7 +6,7 @@ documented results.
 
 | Benchmark | Compares | Status |
 |---|---|---|
-| [extraction-vs-trino](extraction-vs-trino/) | Extracting large result sets out of Elasticsearch into a Python client, vs Trino's Elasticsearch connector | Complete — see [its results](extraction-vs-trino/RESULTS.md) |
+| [extraction-vs-trino](extraction-vs-trino/) | Extracting large result sets out of Elasticsearch into a Python client, vs Trino's Elasticsearch connector | Complete — [results](extraction-vs-trino/RESULTS.md) · [PDF report](extraction-vs-trino/report/SoftClient4ES-vs-Trino-Extraction-Benchmark.pdf) |
 
 ## Principles
 
